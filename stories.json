@@ -8,5 +8,17 @@
   "showCap": true,
   "color": "#ff6a00"
  },
- "stories": []
+ "stories": [
+  {
+   "type": "video",
+   "url": "https://alon089945291-web.github.io/yedid-stories/media/1793049547471.mp4",
+   "caption": "",
+   "style": "s2",
+   "duration": 0,
+   "order": 10,
+   "active": true,
+   "createdAt": 1793049571050,
+   "id": "s1793049571050"
+  }
+ ]
 }
