@@ -4,85 +4,40 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>סיפורי ידיד נפש</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, -apple-system, sans-serif; background-color: #0f172a; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
-        .stories-container { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 20px; }
-        .story-card { background: #1e293b; border-radius: 16px; overflow: hidden; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
-        .story-header { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.2); }
-        .story-title { font-size: 14px; font-weight: bold; color: #1fa795; }
-        .story-time { font-size: 11px; color: #94a3b8; }
-        .media-container { width: 100%; min-height: 250px; background: #000; display: flex; justify-content: center; align-items: center; position: relative; }
-        .media-container img, .media-container video { width: 100%; height: auto; display: block; max-height: 450px; object-fit: contain; }
-        .text-slide { padding: 30px 20px; text-align: center; font-size: 20px; font-weight: bold; line-height: 1.5; width: 100%; }
-        .caption-box { padding: 14px 16px; background: #1e293b; font-size: 14px; line-height: 1.4; color: #e2e8f0; border-top: 1px solid #334155; }
-        .cta-btn { display: inline-block; margin-top: 10px; background: #1fa795; color: #fff; text-decoration: none; padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: bold; text-align: center; }
-        .empty-msg { text-align: center; color: #94a3b8; font-size: 16px; padding: 40px; }
-    </style>
 </head>
 <body>
 
-<div class="stories-container" id="storiesContainer">
-    <div class="empty-msg">טוען תכנים...</div>
-</div>
-
+<!-- כאן יופיע קוד המערכת המלא -->
 <script>
-    async function loadStories() {
-        const container = document.getElementById('storiesContainer');
+    // פונקציה לטעינת הנתונים מקובץ ה-JSON ב-GitHub ושילובם במערכת
+    async function initStoriesSystem() {
         try {
             const response = await fetch('stories.json?v=' + new Date().getTime());
-            if (!response.ok) throw new Error('שגיאה שטעינת הקובץ');
-            const stories = await response.json();
-
-            if (!stories || stories.length === 0) {
-                container.innerHTML = '<div class="empty-msg">אין תכנים להצגה כרגע.</div>';
-                return;
+            if (response.ok) {
+                const fileData = await response.json();
+                if (fileData && fileData.length > 0) {
+                    // טעינת הנתונים מהקובץ אל נתוני המערכת
+                    var savedData = JSON.parse(localStorage.getItem('yn_published_data') || '{}');
+                    savedData.slides = fileData;
+                    window.YN_DATA = savedData;
+                }
             }
-
-            container.innerHTML = stories.map(s => {
-                let mediaHtml = '';
-                if (s.isTextOnly) {
-                    mediaHtml = `<div class="text-slide" style="background: ${s.textBg || '#0f3d3a'}">${escapeHtml(s.textContent || '')}</div>`;
-                } else if (s.url) {
-                    const isVid = s.url.match(/\.(mp4|webm|mov)(\?|$)/i);
-                    if (isVid) {
-                        mediaHtml = `<video src="${escapeHtml(s.url)}" controls playsinline></video>`;
-                    } else {
-                        mediaHtml = `<img src="${escapeHtml(s.url)}" alt="סטורי">`;
-                    }
-                }
-
-                let linkHtml = '';
-                if (s.link) {
-                    linkHtml = `<br><a href="${escapeHtml(s.link)}" target="_blank" class="cta-btn">${escapeHtml(s.linkText || 'לפרטים נוספים')}</a>`;
-                }
-
-                return `
-                    <div class="story-card">
-                        <div class="story-header">
-                            <span class="story-title">ידיד נפש</span>
-                            <span class="story-time">${escapeHtml(s.time || '')}</span>
-                        </div>
-                        <div class="media-container">
-                            ${mediaHtml}
-                        </div>
-                        ${(s.caption || s.link) ? `<div class="caption-box">${escapeHtml(s.caption || '')}${linkHtml}</div>` : ''}
-                    </div>
-                `;
-            }).join('');
-
-        } catch (err) {
-            container.innerHTML = '<div class="empty-msg">אירעה שגיאה בטעינת התכנים. תוכל לוודא שקובץ stories.json מוגדר כראוי.</div>';
+        } catch (e) {
+            console.log("טוען מברירת מחדל מקומית");
         }
+
+        // הפעלת סקריפט המערכת המקורי
+        runStoryApp();
     }
 
-    function escapeHtml(str) {
-        return String(str || '').replace(/[&<>"']/g, function (m) {
-            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
-        });
+    function runStoryApp() {
+        // כאן מודבק הקוד המלא של המערכת שלך
+        window.YN_DATA = window.YN_DATA || JSON.parse(localStorage.getItem('yn_published_data') || '{"settings":{"dur":5,"capStyle":"glass","capBg":"#0f3d3a","capColor":"#ffffff","capSize":20,"ring":"#1fa795","allowEmoji":true,"allowComments":true,"adminCode":"0527148454"},"slides":[],"replies":{},"userComments":[],"views":{}}');
+
+        // (הקוד המלא שלך ממשיך מכאן...)
     }
 
-    loadStories();
+    initStoriesSystem();
 </script>
 
 </body>
