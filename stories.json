@@ -16,7 +16,7 @@
    "style": "s2",
    "duration": 0,
    "order": 10,
-   "active": true,
+   "active": false,
    "createdAt": 1793049571050,
    "id": "s1793049571050"
   }
