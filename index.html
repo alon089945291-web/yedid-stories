@@ -3,18 +3,28 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ידיד נפש – סטטוסים</title>
+<title>ידיד נפש – ניהול סטטוסים</title>
 <style>
 body{font-family:Arial,sans-serif;background:#f4f2ef;color:#1b1c20;margin:0;display:grid;place-items:center;min-height:100vh;padding:20px;text-align:center}
-.c{background:#fff;border-radius:18px;padding:28px;max-width:420px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+.c{background:#fff;border-radius:18px;padding:28px;max-width:440px;width:100%;box-shadow:0 4px 20px rgba(0,0,0,.08)}
 h1{margin:0 0 8px;font-size:22px}p{line-height:1.6;color:#555}
+button{background:#ff6a00;color:#fff;border:0;border-radius:12px;padding:12px 22px;font-size:16px;font-weight:700;cursor:pointer;margin-top:6px}
+#st{margin-top:16px;font-size:14px;font-weight:700}
 </style>
 </head>
 <body>
 <div class="c">
-<h1>סטטוסים – ידיד נפש</h1>
-<p>העיגול בפינה הימנית-תחתונה פותח את הסטטוסים.<br>לכניסת מנהל: לחיצה ארוכה על העיגול, או הוספת <b>#status-admin</b> לסוף הכתובת.</p>
+<h1>ניהול סטטוסים – ידיד נפש</h1>
+<p>כאן מעלים ומנהלים את הסטטוסים של האתר.</p>
+<button id="adm">כניסה לניהול</button>
+<div id="st">בודק את הקוד…</div>
 </div>
-<script src="story-status.js"></script>
+<script>
+var s=document.createElement('script');s.src='story-status.js?v='+Date.now();
+s.onload=function(){document.getElementById('st').style.color='#0a7d33';document.getElementById('st').textContent='✓ הקוד נטען. העיגול בפינה הימנית-תחתונה, או הכפתור למעלה.';};
+s.onerror=function(){document.getElementById('st').style.color='#c00';document.getElementById('st').textContent='✗ הקובץ story-status.js לא נמצא במאגר. צריך להעלות אותו (שם הקובץ בדיוק כך).';};
+document.body.appendChild(s);
+document.getElementById('adm').onclick=function(){if(window.ssAdmin)window.ssAdmin();else document.getElementById('st').textContent='הקוד עדיין לא נטען, נסה שוב בעוד רגע.';};
+</script>
 </body>
 </html>

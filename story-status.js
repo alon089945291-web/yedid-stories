@@ -164,10 +164,12 @@
     return '';
   }
 
+  function isAdminPage() { return !!(store('ss_admin') || location.hash === '#status-admin' || /github\.io$/.test(location.hostname)); }
+
   // ---------- כפתור ----------
   function refreshFab() {
     var fab = $('#fab'); if (!fab) return;
-    var l = visible(), flagged = store('ss_admin') || location.hash === '#status-admin';
+    var l = visible(), flagged = isAdminPage();
     fab.classList.toggle('on', D.S.on !== false && (l.length > 0 || !!flagged));
     var newest = l.length ? l[l.length - 1].createdAt : 0;
     fab.classList.toggle('new', newest > (+store('ss_seen') || 0));
@@ -215,7 +217,8 @@
   function pause(p) { V.paused = p; if (V.vid) { if (p) V.vid.pause(); else V.vid.play().catch(function () {}); } }
   async function open() {
     await fetchAll();
-    V.l = visible(); if (!V.l.length) { refreshFab(); return; }
+    V.l = visible();
+    if (!V.l.length) { refreshFab(); if (isAdminPage()) adminEntry(); return; } // אין סטטוסים עדיין: מנהל נכנס ישר לניהול
     V.open = true; V.paused = false; V.last = 0; $('.ov').classList.add('on');
     document.documentElement.style.overflow = 'hidden';
     store('ss_seen', String(V.l[V.l.length - 1].createdAt));
@@ -317,6 +320,7 @@
       '<button class="ar" id="an" style="left:8px">‹</button><button class="ar" id="ap" style="right:8px">›</button></div></div>' +
       '<div class="pn"><div class="bx"></div></div></div>';
     root = $('#r'); applyColor();
+    refreshFab(); // מציג מיד את הכפתור בדף הניהול
     var fab = $('#fab'), lp = 0, longp = false;
     fab.addEventListener('pointerdown', function () { longp = false; lp = setTimeout(function () { longp = true; adminEntry(); }, 700); });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (e) { fab.addEventListener(e, function () { clearTimeout(lp); }); });
@@ -343,5 +347,6 @@
     setTimeout(refreshFab, 2500); // הלוגו באתר נטען מאוחר יותר
   }
 
+  window.ssAdmin = function () { if (sh) adminEntry(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
