@@ -1,4 +1,12 @@
 {
- "settings": {},
+ "settings": {
+  "on": true,
+  "imgSec": 9,
+  "maxVid": 30,
+  "expireH": 24,
+  "showBars": true,
+  "showCap": true,
+  "color": "#ff6a00"
+ },
  "stories": []
 }
