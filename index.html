@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>האתר של דני ויעלוש</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap">
+  <style>
+    :root {
+      --primary-color: #4a69bd;
+      --primary-light: #f0f3f9;
+      --secondary-color: #6a89cc;
+      --bg-color: #f8f9fa;
+      --card-bg: #ffffff;
+      --text-color: #2c3e50;
+      --chat-my-msg: #4a69bd;
+      --chat-partner-msg: #eef2f5;
+      --font-family: 'Open Sans', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-family);
+    }
+
+    @keyframes screenShake {
+      0% { transform: translate(1px, 1px) rotate(0deg); }
+      20% { transform: translate(-2px, 0px) rotate(1deg); }
+      40% { transform: translate(1px, -1px) rotate(-1deg); }
+      60% { transform: translate(-2px, 1px) rotate(0deg); }
+      80% { transform: translate(1px, -1px) rotate(1deg); }
+      100% { transform: translate(1px, -1px) rotate(0deg); }
+    }
+
+    .shake-effect {
+      animation: screenShake 0.5s;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      max-width: 600px;
+      margin: 0 auto;
+      box-shadow: 0 0 20px rgba(0,0,0,0.05);
+    }
+
+    header {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 16px;
+      text-align: center;
+      border-bottom-left-radius: 18px;
+      border-bottom-right-radius: 18px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+
+    header h1 {
+      font-size: 1.25rem;
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+
+    .user-tag {
+      font-size: 0.75rem;
+      background: rgba(255,255,255,0.2);
+      padding: 3px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+
+    .counter {
+      font-size: 0.8rem;
+      margin-top: 6px;
+      background: rgba(255,255,255,0.15);
+      padding: 4px 14px;
+      border-radius: 12px;
+      display: inline-block;
+      font-weight: 600;
+    }
+
+    nav {
+      display: flex;
+      justify-content: space-around;
+      background: var(--card-bg);
+      padding: 8px 4px;
+      border-bottom: 1px solid #e1e8ed;
+      overflow-x: auto;
+    }
+
+    nav button {
+      background: none;
+      border: none;
+      font-size: 0.8rem;
+      color: var(--text-color);
+      cursor: pointer;
+      padding: 6px 12px;
+      border-radius: 14px;
+      white-space: nowrap;
+      transition: all 0.2s;
+      font-weight: 600;
+    }
+
+    nav button.active {
+      background-color: var(--primary-light);
+      color: var(--primary-color);
+    }
+
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+    }
+
+    .tab-content {
+      display: none;
+      height: 100%;
+    }
+
+    .tab-content.active {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-bottom: 8px;
+    }
+
+    .message {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 14px;
+      font-size: 0.9rem;
+      word-wrap: break-word;
+      position: relative;
+    }
+
+    .message.sent {
+      align-self: flex-start;
+      background-color: var(--chat-my-msg);
+      color: white;
+      border-bottom-right-radius: 2px;
+    }
+
+    .message.received {
+      align-self: flex-end;
+      background-color: var(--chat-partner-msg);
+      color: var(--text-color);
+      border-bottom-left-radius: 2px;
+    }
+
+    .message-author {
+      font-size: 0.7rem;
+      font-weight: bold;
+      margin-bottom: 3px;
+      opacity: 0.85;
+    }
+
+    .message-reactions {
+      display: flex;
+      gap: 4px;
+      margin-top: 6px;
+      font-size: 0.8rem;
+      flex-wrap: wrap;
+    }
+
+    .reaction-btn {
+      background: rgba(0,0,0,0.05);
+      border: none;
+      border-radius: 10px;
+      padding: 2px 6px;
+      cursor: pointer;
+      font-size: 0.75rem;
+    }
+
+    .chat-input-area {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 0;
+      position: relative;
+    }
+
+    .chat-input-area input[type="text"] {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #dcdde1;
+      border-radius: 20px;
+      outline: none;
+      font-size: 0.9rem;
+      background: var(--card-bg);
+      color: var(--text-color);
+    }
+
+    .btn-action {
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 16px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: background-color 0.2s;
+    }
+
+    .btn-action:hover {
+      background-color: var(--secondary-color);
+    }
+
+    .emoji-picker {
+      position: absolute;
+      bottom: 55px;
+      right: 0;
+      background: var(--card-bg);
+      border: 1px solid #dcdde1;
+      border-radius: 14px;
+      padding: 8px;
+      display: none;
+      gap: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      z-index: 10;
+    }
+
+    .emoji-picker span {
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 4px;
+    }
+
+    .section-card {
+      background: var(--card-bg);
+      padding: 16px;
+      border-radius: 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      border: 1px solid #e1e8ed;
+    }
+
+    select, textarea {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #dcdde1;
+      margin-top: 6px;
+      background: var(--card-bg);
+      color: var(--text-color);
+      font-size: 0.9rem;
+      outline: none;
+    }
+
+    .img-preview {
+      max-width: 100%;
+      border-radius: 10px;
+      margin-top: 6px;
+    }
+
+    #hugOverlay {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.35);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+    .hug-card {
+      background: white;
+      padding: 30px;
+      border-radius: 20px;
+      text-align: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .hug-icon {
+      font-size: 4rem;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="hugOverlay" onclick="closeHug()">
+    <div class="hug-card">
+      <div class="hug-icon">🤝</div>
+      <h3 style="color: var(--primary-color);" id="hugText">קיבלת חיזוק וחיבוק מרחוק!</h3>
+    </div>
+  </div>
+
+  <header>
+    <h1>האתר של דני ויעלוש</h1>
+    <span class="user-tag" onclick="switchUser()" id="userDisplay">משתמש: דני (לחץ להחלפה)</span>
+    <br>
+    <div class="counter" id="loveCounter">ביחד 82 ימים!</div>
+    <br>
+    <button class="btn-action" style="margin-top: 8px; background: white; color: var(--primary-color); padding: 5px 14px; font-size: 0.8rem;" onclick="sendRemoteHug()">🤝 שלח חיזוק מרחוק</button>
+  </header>
+
+  <nav>
+    <button class="active" onclick="switchTab('chat', this)">💬 צ'אט</button>
+    <button onclick="switchTab('notes', this)">💌 פתקים</button>
+    <button onclick="switchTab('truthOrDare', this)">🎲 אמת או חובה</button>
+    <button onclick="switchTab('quiz', this)">🎯 חידון הכרות</button>
+    <button onclick="switchTab('gallery', this)">🖼️ גלריה</button>
+  </nav>
+
+  <main>
+    <!-- Chat -->
+    <section id="chat" class="tab-content active">
+      <div class="chat-messages" id="chatBox"></div>
+      
+      <div class="emoji-picker" id="emojiPicker">
+        <span onclick="addEmoji('👍')">👍</span>
+        <span onclick="addEmoji('😊')">😊</span>
+        <span onclick="addEmoji('✨')">✨</span>
+        <span onclick="addEmoji('☕')">☕</span>
+        <span onclick="addEmoji('🌸')">🌸</span>
+        <span onclick="addEmoji('😂')">😂</span>
+        <span onclick="addEmoji('🙏')">🙏</span>
+      </div>
+
+      <div class="chat-input-area">
+        <button class="btn-action" onclick="toggleEmojiPicker()" title="בחר אימוג'י" style="padding: 8px 12px; background: #eef2f5; color: #2c3e50;">😊</button>
+        <input type="text" id="messageInput" placeholder="כתיבת הודעה..." onkeypress="handleKeyPress(event)">
+        <label class="btn-action" style="cursor: pointer; padding: 8px 12px;" title="העלאת תמונה">
+          📷
+          <input type="file" accept="image/*" style="display: none;" onchange="uploadImageFromChat(event)">
+        </label>
+        <button class="btn-action" onclick="sendMessage()">שלח</button>
+      </div>
+    </section>
+
+    <!-- Notes -->
+    <section id="notes" class="tab-content" style="overflow-y: auto;">
+      <div class="section-card">
+        <h3 id="notesTitle">בחר פתק לשליחה 💌</h3>
+        <select id="presetNotesSelect"></select>
+        <button class="btn-action" style="margin-top: 10px; width: 100%;" onclick="sendSelectedNote()">שלח את הפתק הנבחר</button>
+      </div>
+      <div id="notesList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+    </section>
+
+    <!-- Truth or Dare -->
+    <section id="truthOrDare" class="tab-content" style="overflow-y: auto;">
+      <div class="section-card" style="text-align: center;">
+        <h3>משחק אמת או חובה משותף 🎲</h3>
+        <div id="todQuestionBox" style="font-size: 1rem; padding: 18px; background: var(--bg-color); border-radius: 12px; margin: 12px 0; font-weight: 600;">
+          לחץ על הגרלה כדי להתחיל!
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: center; margin-bottom: 12px;">
+          <button class="btn-action" onclick="nextTOD('אמת')">💬 הגרל אמת</button>
+          <button class="btn-action" onclick="nextTOD('חובה')" style="background: var(--secondary-color);">✨ הגרל חובה</button>
+        </div>
+        <div style="border-top: 1px solid #e1e8ed; padding-top: 12px; margin-top: 12px;">
+          <p style="font-size: 0.8rem; margin-bottom: 8px; opacity: 0.8;">הצבעה בזמן אמת של שניכם על השאלה הנוכחית:</p>
+          <div style="display: flex; justify-content: center; gap: 15px;">
+            <button class="btn-action" style="background: #27ae60;" onclick="voteTOD('אהבתי 👍')">אהבתי 👍 (<span id="voteYesCount">0</span>)</button>
+            <button class="btn-action" style="background: #e74c3c;" onclick="voteTOD('עובר ⏭️')">עובר ⏭️ (<span id="voteNoCount">0</span>)</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quiz -->
+    <section id="quiz" class="tab-content" style="overflow-y: auto;">
+      <div class="section-card">
+        <h3>חידון הכרות הדדי 🎯</h3>
+        <p style="font-size: 0.75rem; opacity: 0.7; margin-bottom: 6px;">שאל שאלות, ראה את תשובת הצד השני, תן ציון וראה מי מוביל!</p>
+        <textarea id="quizQuestionInput" placeholder="כתוב שאלה (למשל: מה הספר או המאכל האהוב עלי?)"></textarea>
+        <button class="btn-action" style="margin-top: 8px; width: 100%;" onclick="sendQuizQuestion()">פרסם שאלה לחידון</button>
+      </div>
+      <div class="section-card" style="background: var(--primary-light); text-align: center;">
+        <h4 style="color: var(--primary-color);">לוח תוצאות 🏆</h4>
+        <div id="scoreSummary" style="font-size: 0.95rem; font-weight: bold; margin-top: 6px;">טוען ניקוד...</div>
+      </div>
+      <div id="quizList" style="display: flex; flex-direction: column; gap: 10px;"></div>
+    </section>
+
+    <!-- Gallery -->
+    <section id="gallery" class="tab-content" style="overflow-y: auto;">
+      <div class="section-card" style="text-align: center;">
+        <h3>הגלריה המשותפת 🖼️</h3>
+        <label class="btn-action" style="display: inline-block; cursor: pointer; margin-top: 8px;">
+          📷 העלה תמונה לגלריה
+          <input type="file" accept="image/*" style="display: none;" onchange="uploadImageToGallery(event)">
+        </label>
+      </div>
+      <div id="galleryList" style="display: flex; flex-direction: column; gap: 12px;"></div>
+    </section>
+  </main>
+
+  <script>
+    const BIN_ID = "6ae0b476ffd5d160538fffa5";
+    const API_KEY = "$2a$10$TN4T9R6x3CTsm9Vu9hCzqeLGLJi9hjMC.aGNgi1v1FfHonl7CjRzu";
+    const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+    let appData = {
+      messages: [],
+      notes: [],
+      quiz: [],
+      gallery: [],
+      hug: { sender: "", timestamp: 0 },
+      tod: { type: "אמת", text: "לחץ על הגרלה כדי להתחיל!", votes: {} }
+    };
+
+    let currentUser = localStorage.getItem('chatUser') || 'דני';
+    
+    function updateHeaderUser() {
+      document.getElementById('userDisplay').innerText = `משתמש: ${currentUser} (לחץ להחלפה)`;
+      updateGenderBasedTexts();
+    }
+    updateHeaderUser();
+
+    function switchUser() {
+      currentUser = currentUser === 'דני' ? 'יעלוש' : 'דני';
+      localStorage.setItem('chatUser', currentUser);
+      updateHeaderUser();
+      renderAll();
+    }
+
+    function updateGenderBasedTexts() {
+      const notesSelect = document.getElementById('presetNotesSelect');
+      if (currentUser === 'דני') {
+        document.getElementById('notesTitle').innerText = "בחר פתק לשליחה ליעלוש 💌";
+        notesSelect.innerHTML = `
+          <option value="סתם רציתי להזכיר לך שאני מעריך מאוד את הקשר שלנו!">סתם רציתי להזכיר לך שאני מעריך מאוד את הקשר שלנו!</option>
+          <option value="תודה על כל החיוכים והשיחות הטובות 😊">תודה על כל החיוכים והשיחות הטובות 😊</option>
+          <option value="אין כמו השיחות המיוחדות והמעמיקות שלנו 💕">אין כמו השיחות המיוחדות והמעמיקות שלנו 💕</option>
+          <option value="מחכה כבר שנדבר ונשתמע! ☕">מחכה כבר שנדבר ונשתמע! ☕</option>
+          <option value="יום מקסים ומבורך שיהיה לך 🌟">יום מקסים ומבורך שיהיה לך 🌟</option>
+          <option value="שולח לך ברכת הצלחה וחיזוק מרחוק! 🙏">שולח לך ברכת הצלחה וחיזוק מרחוק! 🙏</option>
+          <option value="השם יברך אותך בכל טוב סלה! 🙏">השם יברך אותך בכל טוב סלה! 🙏</option>
+          <option value="את אדם מיוחד ואיכותי מאוד ✨">את אדם מיוחד ואיכותי מאוד ✨</option>
+          <option value="מעריך כל רגע שאנחנו מדברים ונמצאים בקשר 🌸">מעריך כל רגע שאנחנו מדברים ונמצאים בקשר 🌸</option>
+        `;
+      } else {
+        document.getElementById('notesTitle').innerText = "בחר פתק לשליחה לדני 💌";
+        notesSelect.innerHTML = `
+          <option value="סתם רציתי להזכיר לך שאני מעריכה מאוד את הקשר שלנו!">סתם רציתי להזכיר לך שאני מעריכה מאוד את הקשר שלנו!</option>
+          <option value="תודה על כל החיוכים והשיחות הטובות 😊">תודה על כל החיוכים והשיחות הטובות 😊</option>
+          <option value="אין כמו השיחות המיוחדות והמעמיקות שלנו 💕">אין כמו השיחות המיוחדות והמעמיקות שלנו 💕</option>
+          <option value="מחכה כבר שנדבר ונשתמע! ☕">מחכה כבר שנדבר ונשתמע! ☕</option>
+          <option value="יום מקסים ומבורך שיהיה לך 🌟">יום מקסים ומבורך שיהיה לך 🌟</option>
+          <option value="שולחת לך ברכת הצלחה וחיזוק מרחוק! 🙏">שולחת לך ברכת הצלחה וחיזוק מרחוק! 🙏</option>
+          <option value="השם יברך אותך בכל טוב סלה! 🙏">השם יברך אותך בכל טוב סלה! 🙏</option>
+          <option value="אתה אדם מיוחד ואיכותי מאוד ✨">אתה אדם מיוחד ואיכותי מאוד ✨</option>
+          <option value="מעריכה כל רגע שאנחנו מדברים ונמצאים בקשר 🌸">מעריכה כל רגע שאנחנו מדברים ונמצאים בקשר 🌸</option>
+        `;
+      }
+    }
+
+    const baseDays = 82;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - baseDays);
+    function updateCounter() {
+      const now = new Date();
+      const diffDays = Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
+      document.getElementById('loveCounter').innerText = `ביחד כבר ${diffDays} ימים!`;
+    }
+    updateCounter();
+
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    function toggleEmojiPicker() {
+      const picker = document.getElementById('emojiPicker');
+      picker.style.display = picker.style.display === 'flex' ? 'none' : 'flex';
+    }
+
+    function addEmoji(emoji) {
+      const input = document.getElementById('messageInput');
+      input.value += emoji;
+      document.getElementById('emojiPicker').style.display = 'none';
+      input.focus();
+    }
+
+    let lastHugTimestamp = 0;
+    function sendRemoteHug() {
+      appData.hug = { sender: currentUser, timestamp: Date.now() };
+      saveDatabase();
+      triggerHugEffect(currentUser);
+    }
+
+    function triggerHugEffect(senderName) {
+      if (senderName === currentUser) return;
+      document.body.classList.add('shake-effect');
+      document.getElementById('hugText').innerText = `${senderName} שלח/ה לך ברכת חיזוק מרחוק!`;
+      document.getElementById('hugOverlay').style.display = 'flex';
+      setTimeout(() => {
+        document.body.classList.remove('shake-effect');
+      }, 500);
+    }
+
+    function closeHug() {
+      document.getElementById('hugOverlay').style.display = 'none';
+    }
+
+    async function fetchDatabase() {
+      try {
+        const res = await fetch(API_URL, {
+          headers: { 'X-Master-Key': API_KEY }
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.record && json.record.messages) {
+            if (json.record.hug && json.record.hug.timestamp > lastHugTimestamp) {
+              lastHugTimestamp = json.record.hug.timestamp;
+              if (json.record.hug.sender && json.record.hug.sender !== currentUser) {
+                triggerHugEffect(json.record.hug.sender);
+              }
+            }
+            appData = json.record;
+            renderAll();
+          }
+        }
+      } catch (e) {
+        console.log("שגיאה בטעינת הנתונים:", e);
+      }
+    }
+
+    async function saveDatabase() {
+      try {
+        await fetch(API_URL, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Master-Key': API_KEY
+          },
+          body: JSON.stringify(appData)
+        });
+      } catch (e) {
+        console.log("שגיאה בשמירת הנתונים:", e);
+      }
+    }
+
+    setInterval(fetchDatabase, 3000);
+    fetchDatabase();
+
+    function renderAll() {
+      renderChat();
+      renderNotes();
+      renderQuiz();
+      renderGallery();
+      renderTOD();
+    }
+
+    const todTruths = [
+      "מה הדבר הכי מצחיק שקרה לך השבוע?",
+      "איזה זיכרון משותף שלנו הכי מעלה לך חיוך?",
+      "מה המאכל האהוב עליך בעולם?",
+      "איזה שיר עושה לך טוב על הלב מיד כשאתה שומע אותו?",
+      "מה החלום שהכי היית רוצה להגשים בקרוב?",
+      "מה הזיכרון הכי מתוק שיש לך מהתקופה האחרונה?",
+      "איזה תחביב חדש היית רוצה ללמוד?",
+      "מה הדבר הכי מרגש שמישהו אמר לך לאחרונה?",
+      "איזה מקום בארץ הכי עושה לך שקט בראש?"
+    ];
+    const todDares = [
+      "שלח כעת הודעה משמחת בצ'אט!",
+      "כתוב מחמאה מיוחדת ומקורית לשני.",
+      "שלח אימוג'י מצחיק בלי שום מילה נוספת.",
+      "תאר את היום שלך ב-3 מילים בלבד.",
+      "שלח הודעה עם שיר שאתה הכי אוהב כרגע.",
+      "תכתוב פתק חדש ומפתיע ללוח הפתקים."
+    ];
+
+    function nextTOD(type) {
+      let list = type === 'אמת' ? todTruths : todDares;
+      let randomText = list[Math.floor(Math.random() * list.length)];
+      appData.tod = {
+        type: type,
+        text: randomText,
+        votes: {}
+      };
+      renderTOD();
+      saveDatabase();
+    }
+
+    function voteTOD(voteVal) {
+      if (!appData.tod.votes) appData.tod.votes = {};
+      appData.tod.votes[currentUser] = voteVal;
+      renderTOD();
+      saveDatabase();
+    }
+
+    function renderTOD() {
+      if (!appData.tod) return;
+      document.getElementById('todQuestionBox').innerHTML = `[${appData.tod.type}]<br>${appData.tod.text}`;
+      
+      let yesCount = 0;
+      let noCount = 0;
+      if (appData.tod.votes) {
+        Object.values(appData.tod.votes).forEach(v => {
+          if (v.includes('אהבתי')) yesCount++;
+          else if (v.includes('עובר')) noCount++;
+        });
+      }
+      document.getElementById('voteYesCount').innerText = yesCount;
+      document.getElementById('voteNoCount').innerText = noCount;
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      appData.messages.push({
+        id: Date.now(),
+        author: currentUser,
+        text: text,
+        type: 'text',
+        reactions: {},
+        timestamp: Date.now()
+      });
+      input.value = '';
+      renderChat();
+      saveDatabase();
+    }
+
+    function handleKeyPress(e) {
+      if (e.key === 'Enter') sendMessage();
+    }
+
+    function addReaction(msgId, emoji) {
+      const msg = appData.messages.find(m => m.id === msgId);
+      if (msg) {
+        if (!msg.reactions) msg.reactions = {};
+        msg.reactions[currentUser] = emoji;
+        renderChat();
+        saveDatabase();
+      }
+    }
+
+    function renderChat() {
+      const chatBox = document.getElementById('chatBox');
+      chatBox.innerHTML = '';
+      appData.messages.forEach(msg => {
+        const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const msgDiv = document.createElement('div');
+        msgDiv.className = msg.author === currentUser ? 'message sent' : 'message received';
+
+        let innerHtml = `<div class="message-author">${msg.author}</div>`;
+        if (msg.type === 'image') {
+          innerHtml += `<img src="${msg.text}" class="img-preview">`;
+        } else {
+          innerHtml += `<div>${msg.text}</div>`;
+        }
+
+        let reactionsHtml = '';
+        if (msg.reactions) {
+          const counts = {};
+          Object.values(msg.reactions).forEach(emo => { counts[emo] = (counts[emo] || 0) + 1; });
+          for (let [emo, count] of Object.entries(counts)) {
+            reactionsHtml += `<span class="reaction-btn">${emo} ${count}</span>`;
+          }
+        }
+
+        innerHtml += `
+          <div class="message-reactions">
+            ${reactionsHtml}
+            <span class="reaction-btn" onclick="addReaction(${msg.id}, '👍')" title="לייק">👍</span>
+            <span class="reaction-btn" onclick="addReaction(${msg.id}, '😊')" title="חיוך">😊</span>
+          </div>
+          <div style="font-size:0.6rem; opacity:0.75; margin-top:3px; text-align: left;">${timeStr}</div>
+        `;
+
+        msgDiv.innerHTML = innerHtml;
+        chatBox.appendChild(msgDiv);
+      });
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function uploadImageFromChat(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const base64Img = e.target.result;
+          appData.messages.push({
+            id: Date.now(),
+            author: currentUser,
+            text: base64Img,
+            type: 'image',
+            timestamp: Date.now()
+          });
+          appData.gallery.push({
+            author: currentUser,
+            img: base64Img,
+            timestamp: Date.now()
+          });
+          renderAll();
+          saveDatabase();
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    function uploadImageToGallery(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          appData.gallery.push({
+            author: currentUser,
+            img: e.target.result,
+            timestamp: Date.now()
+          });
+          renderGallery();
+          saveDatabase();
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    function renderGallery() {
+      const galleryList = document.getElementById('galleryList');
+      galleryList.innerHTML = '';
+      [...appData.gallery].reverse().forEach(data => {
+        const card = document.createElement('div');
+        card.className = 'section-card';
+        card.innerHTML = `
+          <div style="font-size: 0.75rem; font-weight: bold; margin-bottom: 4px; color: var(--primary-color);">הועלה ע"י ${data.author} 📸</div>
+          <img src="${data.img}" class="img-preview">
+        `;
+        galleryList.appendChild(card);
+      });
+    }
+
+    function sendSelectedNote() {
+      const text = document.getElementById('presetNotesSelect').value;
+      const recipient = currentUser === 'דני' ? 'יעלוש' : 'דני';
+      appData.notes.push({
+        sender: currentUser,
+        recipient: recipient,
+        text: text,
+        timestamp: Date.now()
+      });
+      renderNotes();
+      saveDatabase();
+      alert('הפתק נשלח בהצלחה!');
+    }
+
+    function renderNotes() {
+      const notesList = document.getElementById('notesList');
+      notesList.innerHTML = '';
+      [...appData.notes].reverse().forEach(data => {
+        const card = document.createElement('div');
+        card.className = 'section-card';
+        card.innerHTML = `
+          <div style="font-size: 0.75rem; color: var(--primary-color); font-weight: bold; margin-bottom: 4px;">
+            ${data.sender} שלח/ה פתק ל-${data.recipient} 💌
+          </div>
+          <div style="font-size: 0.9rem;">${data.text}</div>
+        `;
+        notesList.appendChild(card);
+      });
+    }
+
+    function sendQuizQuestion() {
+      const input = document.getElementById('quizQuestionInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      appData.quiz.push({
+        id: Date.now(),
+        author: currentUser,
+        question: text,
+        answer: "",
+        score: null,
+        timestamp: Date.now()
+      });
+      input.value = '';
+      renderQuiz();
+      saveDatabase();
+    }
+
+    function submitQuizAnswer(quizId, answerText) {
+      const q = appData.quiz.find(item => item.id === quizId);
+      if (q) {
+        q.answer = answerText;
+        renderQuiz();
+        saveDatabase();
+      }
+    }
+
+    function submitQuizScore(quizId, scoreVal) {
+      const q = appData.quiz.find(item => item.id === quizId);
+      if (q) {
+        q.score = Number(scoreVal);
+        renderQuiz();
+        saveDatabase();
+      }
+    }
+
+    function renderQuiz() {
+      const quizList = document.getElementById('quizList');
+      quizList.innerHTML = '';
+      
+      let daniScore = 0;
+      let yaloushScore = 0;
+
+      [...appData.quiz].reverse().forEach(data => {
+        if (data.score) {
+          if (data.author === 'דני') yaloushScore += data.score;
+          else daniScore += data.score;
+        }
+
+        const card = document.createElement('div');
+        card.className = 'section-card';
+        card.innerHTML = `
+          <div style="font-size: 0.75rem; font-weight: bold; color: var(--secondary-color);">שאלה מאת ${data.author} 🎯</div>
+          <div style="margin: 6px 0; font-size: 0.9rem; font-weight: 600;">${data.question}</div>
+          <div style="font-size: 0.85rem; margin-bottom: 6px; background: var(--bg-color); padding: 8px; border-radius: 8px;">
+            <strong>תשובה:</strong> ${data.answer || 'טרם נענה...'}
+          </div>
+          <input type="text" placeholder="כתוב את התשובה שלך כאן..." value="${data.answer}" onchange="submitQuizAnswer(${data.id}, this.value)" style="margin-bottom: 6px;">
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <span style="font-size: 0.8rem;">ציון (1-10):</span>
+            <input type="number" min="1" max="10" value="${data.score || ''}" onchange="submitQuizScore(${data.id}, this.value)" style="width: 70px; margin: 0;">
+          </div>
+        `;
+        quizList.appendChild(card);
+      });
+
+      const summaryBox = document.getElementById('scoreSummary');
+      summaryBox.innerHTML = `ניקוד כולל — דני: ${daniScore} נק' | יעלוש: ${yaloushScore} נק'`;
+    }
+  </script>
+</body>
+</html>
