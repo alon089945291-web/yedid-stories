@@ -145,7 +145,8 @@
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 22px;
+      padding-top: 36px;
       padding-bottom: 8px;
     }
 
@@ -192,17 +193,18 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 10px;
     }
 
     .msg-actions {
       font-size: 0.65rem;
-      display: none;
+      display: inline-flex;
       gap: 6px;
       cursor: pointer;
-    }
-
-    .message-wrapper:hover .msg-actions {
-      display: inline-flex;
+      color: #e1306c;
+      background: #fff0f5;
+      padding: 2px 6px;
+      border-radius: 6px;
     }
 
     .chat-sticker-bubble {
@@ -220,7 +222,7 @@
 
     .gchat-reaction-bar {
       position: absolute;
-      top: -28px;
+      top: -34px;
       background: #ffffff;
       border: 1px solid #dadce0;
       border-radius: 20px;
@@ -524,6 +526,11 @@
           <button class="btn-action" onclick="nextTOD('אמת')">💬 הגרל אמת</button>
           <button class="btn-action" onclick="nextTOD('חובה')" style="background: var(--secondary-color);">✨ הגרל חובה</button>
         </div>
+        <div style="background: var(--primary-light); padding: 12px; border-radius: 12px; margin-top: 10px;">
+          <input type="text" id="todAnswerInput" placeholder="השב תשובה לשאלה הנוכחית..." style="margin-bottom: 8px;">
+          <button class="btn-action" style="width: 100%;" onclick="sendTODAnswer()">שלח תשובה</button>
+        </div>
+        <div id="todAnswersList" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px; text-align: right;"></div>
         <div style="border-top: 1px solid #e1e8ed; padding-top: 12px; margin-top: 12px;">
           <p style="font-size: 0.8rem; margin-bottom: 8px; opacity: 0.8;">הצבעה בזמן אמת של שניכם על השאלה הנוכחית:</p>
           <div style="display: flex; justify-content: center; gap: 15px;">
@@ -636,7 +643,7 @@
       quiz: [],
       gallery: [],
       hug: { sender: "", type: "", timestamp: 0 },
-      tod: { type: "אמת", text: "לחץ על הגרלה כדי להתחיל!", votes: {} }
+      tod: { type: "אמת", text: "לחץ על הגרלה כדי להתחיל!", votes: {}, answers: [] }
     };
 
     let currentUser = localStorage.getItem('chatUser') || 'דני';
@@ -894,7 +901,8 @@
       appData.tod = {
         type: type,
         text: randomText,
-        votes: {}
+        votes: {},
+        answers: []
       };
       renderTOD();
       saveDatabase();
@@ -903,6 +911,22 @@
     function voteTOD(voteVal) {
       if (!appData.tod.votes) appData.tod.votes = {};
       appData.tod.votes[currentUser] = voteVal;
+      renderTOD();
+      saveDatabase();
+    }
+
+    function sendTODAnswer() {
+      const input = document.getElementById('todAnswerInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      if (!appData.tod.answers) appData.tod.answers = [];
+      appData.tod.answers.push({
+        author: currentUser,
+        text: text,
+        timestamp: Date.now()
+      });
+      input.value = '';
       renderTOD();
       saveDatabase();
     }
@@ -921,6 +945,21 @@
       }
       document.getElementById('voteYesCount').innerText = yesCount;
       document.getElementById('voteNoCount').innerText = noCount;
+
+      const answersList = document.getElementById('todAnswersList');
+      answersList.innerHTML = '';
+      if (appData.tod.answers) {
+        [...appData.tod.answers].reverse().forEach(ans => {
+          const div = document.createElement('div');
+          div.style.background = 'var(--card-bg)';
+          div.style.padding = '8px 12px';
+          div.style.borderRadius = '8px';
+          div.style.fontSize = '0.85rem';
+          div.style.border = '1px solid #e1e8ed';
+          div.innerHTML = `<strong>${ans.author}:</strong> ${ans.text}`;
+          answersList.appendChild(div);
+        });
+      }
     }
 
     function sendMessage() {
@@ -945,18 +984,21 @@
       if (e.key === 'Enter') sendMessage();
     }
 
-    // ניהול תגובות אימוג'י עם ספירת קולות (מונה מצביעים)
+    // מניעת גלילה קופצת בעת לחיצה על תגובת אימוג'י
     function addReaction(msgId, emoji) {
       const msg = appData.messages.find(m => m.id === msgId);
       if (msg) {
         if (!msg.reactions) msg.reactions = {};
-        // אם המשתמש כבר לחץ על האימוג'י הזה, נסיר (Toggle), אחרת נגדיר עבורו
         if (msg.reactions[currentUser] === emoji) {
           delete msg.reactions[currentUser];
         } else {
           msg.reactions[currentUser] = emoji;
         }
+        
+        const chatBox = document.getElementById('chatBox');
+        const scrollPos = chatBox.scrollTop;
         renderChat();
+        chatBox.scrollTop = scrollPos; // שומר על המיקום הנוכחי בלי קפיצה לסוף
         saveDatabase();
       }
     }
@@ -983,6 +1025,8 @@
 
     function renderChat() {
       const chatBox = document.getElementById('chatBox');
+      const isAtBottom = chatBox.scrollHeight - chatBox.scrollTop <= chatBox.clientHeight + 100;
+
       chatBox.innerHTML = '';
       appData.messages.forEach(msg => {
         const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1016,7 +1060,6 @@
         let reactionsDisplayHtml = '';
         if (msg.reactions) {
           const counts = {};
-          // ספירת קולות לפי אימוג'י
           Object.values(msg.reactions).forEach(emo => { counts[emo] = (counts[emo] || 0) + 1; });
           for (let [emo, count] of Object.entries(counts)) {
             reactionsDisplayHtml += `<span class="reaction-badge" onclick="addReaction(${msg.id}, '${emo}')">${emo} ${count}</span>`;
@@ -1032,10 +1075,12 @@
         wrapper.appendChild(reactionsDiv);
         chatBox.appendChild(wrapper);
       });
-      chatBox.scrollTop = chatBox.scrollHeight;
+
+      if (isAtBottom) {
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
     }
 
-    // מנגנון כיווץ והעלאת תמונות יציב ללא תקלות
     function processImageFile(file, callback) {
       const reader = new FileReader();
       reader.onload = function(e) {
