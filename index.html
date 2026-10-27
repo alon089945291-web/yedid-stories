@@ -13,7 +13,7 @@
       --bg-color: #f7f9fc;
       --card-bg: #ffffff;
       --text-color: #2c3e50;
-      --chat-my-msg: #eef4fc; /* תכלת-אפרפר בהיר מאוד ועדין */
+      --chat-my-msg: #eef4fc;
       --chat-partner-msg: #f2f4f7;
       --font-family: 'Open Sans', sans-serif;
     }
@@ -25,17 +25,19 @@
       font-family: var(--font-family);
     }
 
-    @keyframes screenShake {
-      0% { transform: translate(1px, 1px) rotate(0deg); }
-      20% { transform: translate(-2px, 0px) rotate(1deg); }
-      40% { transform: translate(1px, -1px) rotate(-1deg); }
-      60% { transform: translate(-2px, 1px) rotate(0deg); }
-      80% { transform: translate(1px, -1px) rotate(1deg); }
-      100% { transform: translate(1px, -1px) rotate(0deg); }
+    /* אפקט הקפצה ורעידה למסך */
+    @keyframes bounceShake {
+      0% { transform: scale(1) translate(0, 0); }
+      15% { transform: scale(1.03) translate(-8px, 5px) rotate(-1deg); }
+      30% { transform: scale(0.97) translate(8px, -5px) rotate(1deg); }
+      45% { transform: scale(1.02) translate(-6px, -4px) rotate(-1deg); }
+      60% { transform: scale(0.98) translate(6px, 4px) rotate(1deg); }
+      75% { transform: scale(1.01) translate(-3px, 2px); }
+      100% { transform: scale(1) translate(0, 0); }
     }
 
-    .shake-effect {
-      animation: screenShake 0.5s;
+    .bounce-shake-effect {
+      animation: bounceShake 0.75s ease-in-out;
     }
 
     body {
@@ -49,7 +51,6 @@
       box-shadow: 0 0 20px rgba(0,0,0,0.05);
     }
 
-    /* כותרת בסגנון אינסטגרם מודרני */
     header {
       background: linear-gradient(45deg, #405de6, #5851db, #833ab4, #c13584, #e1306c, #fd1d1d);
       color: white;
@@ -179,14 +180,13 @@
       opacity: 0.8;
     }
 
-    /* סרגל תגובות צף בסגנון Google Chat */
     .gchat-reaction-bar {
       position: absolute;
-      top: -22px;
+      top: -24px;
       background: #ffffff;
       border: 1px solid #dcdde1;
       border-radius: 20px;
-      padding: 2px 8px;
+      padding: 3px 10px;
       display: flex;
       gap: 6px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -203,7 +203,7 @@
 
     .gchat-reaction-bar span {
       cursor: pointer;
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       transition: transform 0.1s;
     }
 
@@ -215,6 +215,7 @@
       display: flex;
       gap: 4px;
       margin-top: 4px;
+      flex-wrap: wrap;
     }
 
     .reaction-badge {
@@ -256,24 +257,70 @@
       font-weight: 600;
     }
 
-    .emoji-picker {
+    /* חלונית אימוג'ים מעוצבת בסגנון Google Chat */
+    .gchat-emoji-picker-modal {
       position: absolute;
       bottom: 55px;
       right: 0;
-      background: var(--card-bg);
-      border: 1px solid #dcdde1;
-      border-radius: 14px;
-      padding: 8px;
+      width: 310px;
+      height: 320px;
+      background: #ffffff;
+      border: 1px solid #dadce0;
+      border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
       display: none;
-      gap: 6px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-      z-index: 10;
+      flex-direction: column;
+      z-index: 100;
+      overflow: hidden;
     }
 
-    .emoji-picker span {
+    .gchat-picker-header {
+      padding: 8px 10px;
+      background: #f1f3f4;
+      border-bottom: 1px solid #dadce0;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .gchat-picker-search {
+      width: 100%;
+      padding: 6px 10px;
+      border-radius: 12px;
+      border: 1px solid #dadce0;
+      font-size: 0.8rem;
+      outline: none;
+    }
+
+    .gchat-picker-categories {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 12px;
+      background: #ffffff;
+      border-bottom: 1px solid #f1f3f4;
+      font-size: 1rem;
+    }
+
+    .gchat-picker-grid {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+    }
+
+    .gchat-picker-grid span {
       cursor: pointer;
-      font-size: 1.2rem;
+      font-size: 1.25rem;
+      text-align: center;
       padding: 4px;
+      border-radius: 8px;
+      transition: background 0.1s;
+    }
+
+    .gchat-picker-grid span:hover {
+      background: #f1f3f4;
     }
 
     .section-card {
@@ -306,18 +353,19 @@
     #hugOverlay {
       position: fixed;
       top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.35);
+      background: rgba(0,0,0,0.4);
       display: none;
       justify-content: center;
       align-items: center;
       z-index: 9999;
     }
+
     .hug-card {
       background: white;
       padding: 30px;
-      border-radius: 20px;
+      border-radius: 24px;
       text-align: center;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      box-shadow: 0 6px 25px rgba(0,0,0,0.2);
     }
   </style>
 </head>
@@ -325,7 +373,7 @@
 
   <div id="hugOverlay" onclick="closeHug()">
     <div class="hug-card">
-      <div style="font-size: 4rem; margin-bottom: 10px;">🤝</div>
+      <div style="font-size: 5rem; margin-bottom: 10px;" id="hugIconAnim">🤗</div>
       <h3 style="color: #e1306c;" id="hugText">קיבלת חיזוק וחיבוק מרחוק!</h3>
     </div>
   </div>
@@ -336,7 +384,7 @@
     <br>
     <div class="counter" id="loveCounter">ביחד 82 ימים!</div>
     <br>
-    <button class="btn-action" style="margin-top: 8px; background: white; color: #e1306c; padding: 5px 14px; font-size: 0.8rem;" onclick="sendRemoteHug()">🤝 שלח חיזוק מרחוק</button>
+    <button class="btn-action" style="margin-top: 8px; background: white; color: #e1306c; padding: 5px 14px; font-size: 0.85rem;" onclick="sendRemoteHug()">🤗 שלח חיזוק מרחוק</button>
   </header>
 
   <nav>
@@ -352,14 +400,15 @@
     <section id="chat" class="tab-content active">
       <div class="chat-messages" id="chatBox"></div>
       
-      <div class="emoji-picker" id="emojiPicker">
-        <span onclick="addEmoji('👍')">👍</span>
-        <span onclick="addEmoji('😊')">😊</span>
-        <span onclick="addEmoji('✨')">✨</span>
-        <span onclick="addEmoji('☕')">☕</span>
-        <span onclick="addEmoji('🌸')">🌸</span>
-        <span onclick="addEmoji('😂')">😂</span>
-        <span onclick="addEmoji('🙏')">🙏</span>
+      <!-- חלונית אימוג'ים בסגנון גוגל צ'אט -->
+      <div class="gchat-emoji-picker-modal" id="emojiPicker">
+        <div class="gchat-picker-header">
+          <input type="text" class="gchat-picker-search" placeholder="חיפוש אימוג'י...">
+        </div>
+        <div class="gchat-picker-categories">
+          <span>🕒</span><span>😊</span><span>👍</span><span>☕</span><span>🚗</span><span>💡</span><span>🏁</span>
+        </div>
+        <div class="gchat-picker-grid" id="emojiGrid"></div>
       </div>
 
       <div class="chat-input-area">
@@ -433,10 +482,26 @@
   </main>
 
   <script>
-    // מזהה ה-Bin המעודכן שנוצר
     const BIN_ID = "6ae0bddaffd5d16053901d21";
     const API_KEY = "$2a$10$TN4T9R6x3CTsm9Vu9hCzqeLGLJi9hjMC.aGNgi1v1FfHonl7CjRzu";
     const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+    // מאגר אימוג'ים מורחב בסגנון גוגל
+    const fullEmojiList = [
+      "😂","😭","🥺","🥹","😊","😍","🥰","❤️","💖","💗","💓","✨","🔥","👍","🙌","🙏","🌹","🌸","🌺","☕","⭐","🌟","🎉","🥳","👑","💪","🤗","🤝","😎","😃","😄","😁","😆","😅","😉","😋","ג","🙂","🙃","🫠","🏽","😴","😜","🤪","🤨","🧐","🤓","🤐","‍🔥","💯","👏","✌️","🤞","🤙","👈","👉","👆","👇","💖","💘","💝","❣️","💔","💌"
+    ];
+
+    function buildEmojiGrid() {
+      const grid = document.getElementById('emojiGrid');
+      grid.innerHTML = '';
+      fullEmojiList.forEach(emoji => {
+        const span = document.createElement('span');
+        span.innerText = emoji;
+        span.onclick = () => addEmoji(emoji);
+        grid.appendChild(span);
+      });
+    }
+    buildEmojiGrid();
 
     let appData = {
       messages: [],
@@ -467,6 +532,7 @@
       if (currentUser === 'דני') {
         document.getElementById('notesTitle').innerText = "בחר פתק לשליחה ליעלוש 💌";
         notesSelect.innerHTML = `
+          <option value="את האור של היום שלי 💖">את האור של היום שלי 💖</option>
           <option value="סתם רציתי להזכיר לך שאני מעריך מאוד את הקשר שלנו!">סתם רציתי להזכיר לך שאני מעריך מאוד את הקשר שלנו!</option>
           <option value="תודה על כל החיוכים והשיחות הטובות 😊">תודה על כל החיוכים והשיחות הטובות 😊</option>
           <option value="אין כמו השיחות המיוחדות והמעמיקות שלנו 💕">אין כמו השיחות המיוחדות והמעמיקות שלנו 💕</option>
@@ -476,10 +542,30 @@
           <option value="השם יברך אותך בכל טוב סלה! 🙏">השם יברך אותך בכל טוב סלה! 🙏</option>
           <option value="את אדם מיוחד ואיכותי מאוד ✨">את אדם מיוחד ואיכותי מאוד ✨</option>
           <option value="מעריך כל רגע שאנחנו מדברים ונמצאים בקשר 🌸">מעריך כל רגע שאנחנו מדברים ונמצאים בקשר 🌸</option>
+          <option value="את מקור הכוח והשמחה שלי ❤️">את מקור הכוח והשמחה שלי ❤️</option>
+          <option value="שתהיה לך הצלחה רבה בכל מעשה ידיך! 💪">שתהיה לך הצלחה רבה בכל מעשה ידיך! 💪</option>
+          <option value="מעריך את הלב הטוב והמיוחד שלך 🌹">מעריך את הלב הטוב והמיוחד שלך 🌹</option>
+          <option value="זכות עצומה היא לי שיש לי קשר מיוחד כזה איתך 🌟">זכות עצומה היא לי שיש לי קשר מיוחד כזה איתך 🌟</option>
+          <option value="תודה שאת תמיד שם להקשיב ולתמוך 🥹">תודה שאת תמיד שם להקשיב ולתמוך 🥹</option>
+          <option value="את הדבר הכי מיוחד ומוערך שיש בעולם ✨">את הדבר הכי מיוחד ומוערך שיש בעולם ✨</option>
+          <option value="שולח לך חיבוק ענק של חיזוק והערכה! 🤗">שולח לך חיבוק ענק של חיזוק והערכה! 🤗</option>
+          <option value="מאחל לך שפע של ברכה, נחת ושמחה בלב 🌺">מאחל לך שפע של ברכה, נחת ושמחה בלב 🌺</option>
+          <option value="כיף ענק לדעת שיש מי שמבינה אותי כל כך לעומק 🥰">כיף ענק לדעת שיש מי שמבינה אותי כל כך לעומק 🥰</option>
+          <option value="שהיום שלך יהיה מלא באור, חיוכים וסיעתא דשמיא ☀️">שהיום שלך יהיה מלא באור, חיוכים וסיעתא דשמיא ☀️</option>
+          <option value="מעריך כל מילה וכל שיחה שלנו מחדש 💬">מעריך כל מילה וכל שיחה שלנו מחדש 💬</option>
+          <option value="את נותנת לי המון כוח להמשיך קדימה 💪">את נותנת לי המון כוח להמשיך קדימה 💪</option>
+          <option value="מודה על כל רגע טוב שאנחנו חולקים יחד 🙏">מודה על כל רגע טוב שאנחנו חולקים יחד 🙏</option>
+          <option value="את משרה סביבך כל כך הרבה טוב ואור 🌸">את משרה סביבך כל כך הרבה טוב ואור 🌸</option>
+          <option value="מחכה כבר לשיחה הבאה שלנו בהתרגשות ✨">מחכה כבר לשיחה הבאה שלנו בהתרגשות ✨</option>
+          <option value="אין כמוך בכל העולם כולו! 💖">אין כמוך בכל העולם כולו! 💖</option>
+          <option value="הקשר שלנו הוא מתנה אמיתית משמיים 🎁">הקשר שלנו הוא מתנה אמיתית משמיים 🎁</option>
+          <option value="שולח לך ברכה מכל הלב להצלחה בכל העניינים 🌟">שולח לך ברכה מכל הלב להצלחה בכל העניינים 🌟</option>
+          <option value="תמיד כאן בשבילך לכל דבר שתצטרכי 🤝">תמיד כאן בשבילך לכל דבר שתצטרכי 🤝</option>
         `;
       } else {
         document.getElementById('notesTitle').innerText = "בחר פתק לשליחה לדני 💌";
         notesSelect.innerHTML = `
+          <option value="אתה האור של היום שלי 💖">אתה האור של היום שלי 💖</option>
           <option value="סתם רציתי להזכיר לך שאני מעריכה מאוד את הקשר שלנו!">סתם רציתי להזכיר לך שאני מעריכה מאוד את הקשר שלנו!</option>
           <option value="תודה על כל החיוכים והשיחות הטובות 😊">תודה על כל החיוכים והשיחות הטובות 😊</option>
           <option value="אין כמו השיחות המיוחדות והמעמיקות שלנו 💕">אין כמו השיחות המיוחדות והמעמיקות שלנו 💕</option>
@@ -489,6 +575,25 @@
           <option value="השם יברך אותך בכל טוב סלה! 🙏">השם יברך אותך בכל טוב סלה! 🙏</option>
           <option value="אתה אדם מיוחד ואיכותי מאוד ✨">אתה אדם מיוחד ואיכותי מאוד ✨</option>
           <option value="מעריכה כל רגע שאנחנו מדברים ונמצאים בקשר 🌸">מעריכה כל רגע שאנחנו מדברים ונמצאים בקשר 🌸</option>
+          <option value="אתה מקור הכוח והשמחה שלי ❤️">אתה מקור הכוח והשמחה שלי ❤️</option>
+          <option value="שתהיה לך הצלחה רבה בכל מעשה ידיך! 💪">שתהיה לך הצלחה רבה בכל מעשה ידיך! 💪</option>
+          <option value="מעריכה את הלב הטוב והמיוחד שלך 🌹">מעריכה את הלב הטוב והמיוחד שלך 🌹</option>
+          <option value="זכות עצומה היא לי שיש לי קשר מיוחד כזה איתך 🌟">זכות עצומה היא לי שיש לי קשר מיוחד כזה איתך 🌟</option>
+          <option value="תודה שאתה תמיד שם להקשיב ולתמוך 🥹">תודה שאתה תמיד שם להקשיב ולתמוך 🥹</option>
+          <option value="אתה הדבר הכי מיוחד ומוערך שיש בעולם ✨">אתה הדבר הכי מיוחד ומוערך שיש בעולם ✨</option>
+          <option value="שולחת לך חיבוק ענק של חיזוק והערכה! 🤗">שולחת לך חיבוק ענק של חיזוק והערכה! 🤗</option>
+          <option value="מאחלת לך שפע של ברכה, נחת ושמחה בלב 🌺">מאחלת לך שפע של ברכה, נחת ושמחה בלב 🌺</option>
+          <option value="כיף ענק לדעת שיש מי שמבין אותי כל כך לעומק 🥰">כיף ענק לדעת שיש מי שמבין אותי כל כך לעומק 🥰</option>
+          <option value="שהיום שלך יהיה מלא באור, חיוכים וסיעתא דשמיא ☀️">שהיום שלך יהיה מלא באור, חיוכים וסיעתא דשמיא ☀️</option>
+          <option value="מעריכה כל מילה וכל שיחה שלנו מחדש 💬">מעריכה כל מילה וכל שיחה שלנו מחדש 💬</option>
+          <option value="אתה נותן לי המון כוח להמשיך קדימה 💪">אתה נותן לי המון כוח להמשיך קדימה 💪</option>
+          <option value="מודה על כל רגע טוב שאנחנו חולקים יחד 🙏">מודה על כל רגע טוב שאנחנו חולקים יחד 🙏</option>
+          <option value="אתה משרה סביבך כל כך הרבה טוב ואור 🌸">אתה משרה סביבך כל כך הרבה טוב ואור 🌸</option>
+          <option value="מחכה כבר לשיחה הבאה שלנו בהתרגשות ✨">מחכה כבר לשיחה הבאה שלנו בהתרגשות ✨</option>
+          <option value="אין כמוך בכל העולם כולו! 💖">אין כמוך בכל העולם כולו! 💖</option>
+          <option value="הקשר שלנו הוא מתנה אמיתית משמיים 🎁">הקשר שלנו הוא מתנה אמיתית משמיים 🎁</option>
+          <option value="שולחת לך ברכה מכל הלב להצלחה בכל העניינים 🌟">שולחת לך ברכה מכל הלב להצלחה בכל העניינים 🌟</option>
+          <option value="תמיד כאן בשבילך לכל דבר שתצטרך 🤝">תמיד כאן בשבילך לכל דבר שתצטרך 🤝</option>
         `;
       }
     }
@@ -523,6 +628,7 @@
     }
 
     let lastHugTimestamp = 0;
+    
     function sendRemoteHug() {
       appData.hug = { sender: currentUser, timestamp: Date.now() };
       saveDatabase();
@@ -530,13 +636,12 @@
     }
 
     function triggerHugEffect(senderName) {
-      if (senderName === currentUser) return;
-      document.body.classList.add('shake-effect');
-      document.getElementById('hugText').innerText = `${senderName} שלח/ה לך ברכת חיזוק מרחוק!`;
+      document.body.classList.add('bounce-shake-effect');
+      document.getElementById('hugText').innerText = `${senderName} שלח/ה לך חיזוק וחיבוק מרחוק!`;
       document.getElementById('hugOverlay').style.display = 'flex';
       setTimeout(() => {
-        document.body.classList.remove('shake-effect');
-      }, 500);
+        document.body.classList.remove('bounce-shake-effect');
+      }, 800);
     }
 
     function closeHug() {
@@ -553,7 +658,7 @@
           if (json.record && json.record.messages) {
             if (json.record.hug && json.record.hug.timestamp > lastHugTimestamp) {
               lastHugTimestamp = json.record.hug.timestamp;
-              if (json.record.hug.sender && json.record.hug.sender !== currentUser) {
+              if (json.record.hug.sender) {
                 triggerHugEffect(json.record.hug.sender);
               }
             }
@@ -688,13 +793,13 @@
         const wrapper = document.createElement('div');
         wrapper.className = msg.author === currentUser ? 'message-wrapper sent' : 'message-wrapper received';
 
-        // סרגל תגובות צף בסגנון Google Chat
         const reactionBar = document.createElement('div');
         reactionBar.className = 'gchat-reaction-bar';
         reactionBar.innerHTML = `
+          <span onclick="addReaction(${msg.id}, '❤️')">❤️</span>
           <span onclick="addReaction(${msg.id}, '👍')">👍</span>
           <span onclick="addReaction(${msg.id}, '😊')">😊</span>
-          <span onclick="addReaction(${msg.id}, '🥹')">🥹</span>
+          <span onclick="addReaction(${msg.id}, '✨')">✨</span>
           <span onclick="addReaction(${msg.id}, '🌸')">🌸</span>
         `;
 
