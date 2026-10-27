@@ -7,14 +7,14 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap">
   <style>
     :root {
-      --primary-color: #4a69bd;
+      --primary-color: #5b7bb2;
       --primary-light: #f0f3f9;
-      --secondary-color: #6a89cc;
-      --bg-color: #f8f9fa;
+      --secondary-color: #7b9acc;
+      --bg-color: #f7f9fc;
       --card-bg: #ffffff;
       --text-color: #2c3e50;
-      --chat-my-msg: #4a69bd;
-      --chat-partner-msg: #eef2f5;
+      --chat-my-msg: #eef4fc; /* תכלת-אפרפר בהיר מאוד ועדין */
+      --chat-partner-msg: #f2f4f7;
       --font-family: 'Open Sans', sans-serif;
     }
 
@@ -49,14 +49,15 @@
       box-shadow: 0 0 20px rgba(0,0,0,0.05);
     }
 
+    /* כותרת בסגנון אינסטגרם מודרני */
     header {
-      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      background: linear-gradient(45deg, #405de6, #5851db, #833ab4, #c13584, #e1306c, #fd1d1d);
       color: white;
       padding: 16px;
       text-align: center;
-      border-bottom-left-radius: 18px;
-      border-bottom-right-radius: 18px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      border-bottom-left-radius: 20px;
+      border-bottom-right-radius: 20px;
+      box-shadow: 0 4px 15px rgba(225, 48, 108, 0.2);
     }
 
     header h1 {
@@ -67,16 +68,17 @@
 
     .user-tag {
       font-size: 0.75rem;
-      background: rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.25);
       padding: 3px 12px;
       border-radius: 12px;
       cursor: pointer;
+      backdrop-filter: blur(5px);
     }
 
     .counter {
       font-size: 0.8rem;
       margin-top: 6px;
-      background: rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.2);
       padding: 4px 14px;
       border-radius: 12px;
       display: inline-block;
@@ -107,7 +109,7 @@
 
     nav button.active {
       background-color: var(--primary-light);
-      color: var(--primary-color);
+      color: #e1306c;
     }
 
     main {
@@ -131,55 +133,97 @@
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 16px;
       padding-bottom: 8px;
     }
 
-    .message {
+    .message-wrapper {
+      position: relative;
+      display: flex;
+      flex-direction: column;
       max-width: 80%;
+    }
+
+    .message-wrapper.sent {
+      align-self: flex-start;
+    }
+
+    .message-wrapper.received {
+      align-self: flex-end;
+    }
+
+    .message {
       padding: 10px 14px;
-      border-radius: 14px;
+      border-radius: 16px;
       font-size: 0.9rem;
       word-wrap: break-word;
+      color: #2c3e50;
       position: relative;
+      border: 1px solid #e1e8ed;
     }
 
-    .message.sent {
-      align-self: flex-start;
+    .message-wrapper.sent .message {
       background-color: var(--chat-my-msg);
-      color: white;
-      border-bottom-right-radius: 2px;
+      border-bottom-right-radius: 3px;
     }
 
-    .message.received {
-      align-self: flex-end;
+    .message-wrapper.received .message {
       background-color: var(--chat-partner-msg);
-      color: var(--text-color);
-      border-bottom-left-radius: 2px;
+      border-bottom-left-radius: 3px;
     }
 
     .message-author {
       font-size: 0.7rem;
       font-weight: bold;
       margin-bottom: 3px;
-      opacity: 0.85;
+      opacity: 0.8;
     }
 
-    .message-reactions {
+    /* סרגל תגובות צף בסגנון Google Chat */
+    .gchat-reaction-bar {
+      position: absolute;
+      top: -22px;
+      background: #ffffff;
+      border: 1px solid #dcdde1;
+      border-radius: 20px;
+      padding: 2px 8px;
+      display: flex;
+      gap: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      z-index: 5;
+    }
+
+    .message-wrapper.sent .gchat-reaction-bar {
+      right: 10px;
+    }
+
+    .message-wrapper.received .gchat-reaction-bar {
+      left: 10px;
+    }
+
+    .gchat-reaction-bar span {
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: transform 0.1s;
+    }
+
+    .gchat-reaction-bar span:hover {
+      transform: scale(1.25);
+    }
+
+    .message-reactions-display {
       display: flex;
       gap: 4px;
-      margin-top: 6px;
-      font-size: 0.8rem;
-      flex-wrap: wrap;
+      margin-top: 4px;
     }
 
-    .reaction-btn {
-      background: rgba(0,0,0,0.05);
-      border: none;
-      border-radius: 10px;
-      padding: 2px 6px;
-      cursor: pointer;
+    .reaction-badge {
+      background: #ffffff;
+      border: 1px solid #e1e8ed;
+      border-radius: 12px;
+      padding: 1px 6px;
       font-size: 0.75rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
 
     .chat-input-area {
@@ -202,7 +246,7 @@
     }
 
     .btn-action {
-      background: var(--primary-color);
+      background: #e1306c;
       color: white;
       border: none;
       padding: 8px 16px;
@@ -210,11 +254,6 @@
       cursor: pointer;
       font-size: 0.85rem;
       font-weight: 600;
-      transition: background-color 0.2s;
-    }
-
-    .btn-action:hover {
-      background-color: var(--secondary-color);
     }
 
     .emoji-picker {
@@ -280,18 +319,14 @@
       text-align: center;
       box-shadow: 0 4px 20px rgba(0,0,0,0.15);
     }
-    .hug-icon {
-      font-size: 4rem;
-      margin-bottom: 10px;
-    }
   </style>
 </head>
 <body>
 
   <div id="hugOverlay" onclick="closeHug()">
     <div class="hug-card">
-      <div class="hug-icon">🤝</div>
-      <h3 style="color: var(--primary-color);" id="hugText">קיבלת חיזוק וחיבוק מרחוק!</h3>
+      <div style="font-size: 4rem; margin-bottom: 10px;">🤝</div>
+      <h3 style="color: #e1306c;" id="hugText">קיבלת חיזוק וחיבוק מרחוק!</h3>
     </div>
   </div>
 
@@ -301,7 +336,7 @@
     <br>
     <div class="counter" id="loveCounter">ביחד 82 ימים!</div>
     <br>
-    <button class="btn-action" style="margin-top: 8px; background: white; color: var(--primary-color); padding: 5px 14px; font-size: 0.8rem;" onclick="sendRemoteHug()">🤝 שלח חיזוק מרחוק</button>
+    <button class="btn-action" style="margin-top: 8px; background: white; color: #e1306c; padding: 5px 14px; font-size: 0.8rem;" onclick="sendRemoteHug()">🤝 שלח חיזוק מרחוק</button>
   </header>
 
   <nav>
@@ -378,7 +413,7 @@
         <button class="btn-action" style="margin-top: 8px; width: 100%;" onclick="sendQuizQuestion()">פרסם שאלה לחידון</button>
       </div>
       <div class="section-card" style="background: var(--primary-light); text-align: center;">
-        <h4 style="color: var(--primary-color);">לוח תוצאות 🏆</h4>
+        <h4 style="color: #e1306c;">לוח תוצאות 🏆</h4>
         <div id="scoreSummary" style="font-size: 0.95rem; font-weight: bold; margin-top: 6px;">טוען ניקוד...</div>
       </div>
       <div id="quizList" style="display: flex; flex-direction: column; gap: 10px;"></div>
@@ -398,7 +433,8 @@
   </main>
 
   <script>
-    const BIN_ID = "6ae0b476ffd5d160538fffa5";
+    // מזהה ה-Bin המעודכן שנוצר
+    const BIN_ID = "6ae0bddaffd5d16053901d21";
     const API_KEY = "$2a$10$TN4T9R6x3CTsm9Vu9hCzqeLGLJi9hjMC.aGNgi1v1FfHonl7CjRzu";
     const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 
@@ -648,8 +684,22 @@
       chatBox.innerHTML = '';
       appData.messages.forEach(msg => {
         const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = msg.author === currentUser ? 'message-wrapper sent' : 'message-wrapper received';
+
+        // סרגל תגובות צף בסגנון Google Chat
+        const reactionBar = document.createElement('div');
+        reactionBar.className = 'gchat-reaction-bar';
+        reactionBar.innerHTML = `
+          <span onclick="addReaction(${msg.id}, '👍')">👍</span>
+          <span onclick="addReaction(${msg.id}, '😊')">😊</span>
+          <span onclick="addReaction(${msg.id}, '🥹')">🥹</span>
+          <span onclick="addReaction(${msg.id}, '🌸')">🌸</span>
+        `;
+
         const msgDiv = document.createElement('div');
-        msgDiv.className = msg.author === currentUser ? 'message sent' : 'message received';
+        msgDiv.className = 'message';
 
         let innerHtml = `<div class="message-author">${msg.author}</div>`;
         if (msg.type === 'image') {
@@ -657,27 +707,26 @@
         } else {
           innerHtml += `<div>${msg.text}</div>`;
         }
+        innerHtml += `<div style="font-size:0.65rem; opacity:0.65; margin-top:4px; text-align: left;">${timeStr}</div>`;
+        msgDiv.innerHTML = innerHtml;
 
-        let reactionsHtml = '';
+        let reactionsDisplayHtml = '';
         if (msg.reactions) {
           const counts = {};
           Object.values(msg.reactions).forEach(emo => { counts[emo] = (counts[emo] || 0) + 1; });
           for (let [emo, count] of Object.entries(counts)) {
-            reactionsHtml += `<span class="reaction-btn">${emo} ${count}</span>`;
+            reactionsDisplayHtml += `<span class="reaction-badge">${emo} ${count}</span>`;
           }
         }
+        
+        const reactionsDiv = document.createElement('div');
+        reactionsDiv.className = 'message-reactions-display';
+        reactionsDiv.innerHTML = reactionsDisplayHtml;
 
-        innerHtml += `
-          <div class="message-reactions">
-            ${reactionsHtml}
-            <span class="reaction-btn" onclick="addReaction(${msg.id}, '👍')" title="לייק">👍</span>
-            <span class="reaction-btn" onclick="addReaction(${msg.id}, '😊')" title="חיוך">😊</span>
-          </div>
-          <div style="font-size:0.6rem; opacity:0.75; margin-top:3px; text-align: left;">${timeStr}</div>
-        `;
-
-        msgDiv.innerHTML = innerHtml;
-        chatBox.appendChild(msgDiv);
+        wrapper.appendChild(reactionBar);
+        wrapper.appendChild(msgDiv);
+        wrapper.appendChild(reactionsDiv);
+        chatBox.appendChild(wrapper);
       });
       chatBox.scrollTop = chatBox.scrollHeight;
     }
@@ -731,7 +780,7 @@
         const card = document.createElement('div');
         card.className = 'section-card';
         card.innerHTML = `
-          <div style="font-size: 0.75rem; font-weight: bold; margin-bottom: 4px; color: var(--primary-color);">הועלה ע"י ${data.author} 📸</div>
+          <div style="font-size: 0.75rem; font-weight: bold; margin-bottom: 4px; color: #e1306c;">הועלה ע"י ${data.author} 📸</div>
           <img src="${data.img}" class="img-preview">
         `;
         galleryList.appendChild(card);
@@ -759,7 +808,7 @@
         const card = document.createElement('div');
         card.className = 'section-card';
         card.innerHTML = `
-          <div style="font-size: 0.75rem; color: var(--primary-color); font-weight: bold; margin-bottom: 4px;">
+          <div style="font-size: 0.75rem; color: #e1306c; font-weight: bold; margin-bottom: 4px;">
             ${data.sender} שלח/ה פתק ל-${data.recipient} 💌
           </div>
           <div style="font-size: 0.9rem;">${data.text}</div>
