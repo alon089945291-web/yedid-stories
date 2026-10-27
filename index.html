@@ -984,7 +984,6 @@
       if (e.key === 'Enter') sendMessage();
     }
 
-    // מניעת גלילה קופצת בעת לחיצה על תגובת אימוג'י
     function addReaction(msgId, emoji) {
       const msg = appData.messages.find(m => m.id === msgId);
       if (msg) {
@@ -998,16 +997,21 @@
         const chatBox = document.getElementById('chatBox');
         const scrollPos = chatBox.scrollTop;
         renderChat();
-        chatBox.scrollTop = scrollPos; // שומר על המיקום הנוכחי בלי קפיצה לסוף
+        chatBox.scrollTop = scrollPos;
         saveDatabase();
       }
     }
 
     function deleteMessage(msgId) {
       if (confirm("האם אתה בטוח שברצונך למחוק הודעה זו?")) {
-        appData.messages = appData.messages.filter(m => m.id !== msgId);
-        renderChat();
-        saveDatabase();
+        const msg = appData.messages.find(m => m.id === msgId);
+        if (msg) {
+          msg.text = `הודעה נמחקה על ידי ${currentUser} 🗑️`;
+          msg.type = 'text';
+          delete msg.reactions;
+          renderChat();
+          saveDatabase();
+        }
       }
     }
 
@@ -1042,7 +1046,7 @@
         msgDiv.className = 'message';
 
         let actionsHtml = '';
-        if (msg.author === currentUser) {
+        if (msg.author === currentUser && !msg.text.includes('הודעה נמחקה על ידי')) {
           actionsHtml = `<span class="msg-actions"><span onclick="editMessage(${msg.id})">עריכה</span> | <span onclick="deleteMessage(${msg.id})">מחיקה</span></span>`;
         }
 
