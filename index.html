@@ -268,9 +268,10 @@
       background: #ffffff;
       border: 1px solid #e1e8ed;
       border-radius: 12px;
-      padding: 1px 6px;
+      padding: 2px 8px;
       font-size: 0.75rem;
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      cursor: pointer;
     }
 
     .chat-input-area {
@@ -356,7 +357,6 @@
       background: #f1f3f4;
     }
 
-    /* פאנל מדבקות מורחב ורומנטי */
     .stickers-picker-modal {
       position: absolute;
       bottom: 55px;
@@ -945,17 +945,22 @@
       if (e.key === 'Enter') sendMessage();
     }
 
+    // ניהול תגובות אימוג'י עם ספירת קולות (מונה מצביעים)
     function addReaction(msgId, emoji) {
       const msg = appData.messages.find(m => m.id === msgId);
       if (msg) {
         if (!msg.reactions) msg.reactions = {};
-        msg.reactions[currentUser] = emoji;
+        // אם המשתמש כבר לחץ על האימוג'י הזה, נסיר (Toggle), אחרת נגדיר עבורו
+        if (msg.reactions[currentUser] === emoji) {
+          delete msg.reactions[currentUser];
+        } else {
+          msg.reactions[currentUser] = emoji;
+        }
         renderChat();
         saveDatabase();
       }
     }
 
-    // הוספת חלון אישור קופץ טרם מחיקת הודעה
     function deleteMessage(msgId) {
       if (confirm("האם אתה בטוח שברצונך למחוק הודעה זו?")) {
         appData.messages = appData.messages.filter(m => m.id !== msgId);
@@ -1011,9 +1016,10 @@
         let reactionsDisplayHtml = '';
         if (msg.reactions) {
           const counts = {};
+          // ספירת קולות לפי אימוג'י
           Object.values(msg.reactions).forEach(emo => { counts[emo] = (counts[emo] || 0) + 1; });
           for (let [emo, count] of Object.entries(counts)) {
-            reactionsDisplayHtml += `<span class="reaction-badge">${emo} ${count}</span>`;
+            reactionsDisplayHtml += `<span class="reaction-badge" onclick="addReaction(${msg.id}, '${emo}')">${emo} ${count}</span>`;
           }
         }
         
@@ -1029,6 +1035,7 @@
       chatBox.scrollTop = chatBox.scrollHeight;
     }
 
+    // מנגנון כיווץ והעלאת תמונות יציב ללא תקלות
     function processImageFile(file, callback) {
       const reader = new FileReader();
       reader.onload = function(e) {
