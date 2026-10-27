@@ -191,7 +191,20 @@
       opacity: 0.8;
     }
 
-    /* סרגל תגובות צף — מוסתר כברירת מחדל ומופיע בריחוף מעל הודעה */
+    /* עיצוב מדבקה אמיתית בצ'אט */
+    .chat-sticker-bubble {
+      background: linear-gradient(135deg, #fff0f5, #ffe4e1);
+      border: 2px dashed #f48fb1;
+      border-radius: 18px;
+      padding: 12px 18px;
+      text-align: center;
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: #ad1457;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+      display: inline-block;
+    }
+
     .gchat-reaction-bar {
       position: absolute;
       top: -28px;
@@ -277,7 +290,6 @@
       font-weight: 600;
     }
 
-    /* חלונית אימוג'ים מורחבת */
     .gchat-emoji-picker-modal {
       position: absolute;
       bottom: 55px;
@@ -331,13 +343,13 @@
       background: #f1f3f4;
     }
 
-    /* פאנל מדבקות (Stickers) בסגנון WhatsApp */
+    /* פאנל מדבקות מעוצב כמו וואטסאפ */
     .stickers-picker-modal {
       position: absolute;
       bottom: 55px;
       right: 50px;
       width: 310px;
-      height: 260px;
+      height: 270px;
       background: #ffffff;
       border: 1px solid #dadce0;
       border-radius: 16px;
@@ -350,14 +362,14 @@
     }
 
     .sticker-item {
-      background: linear-gradient(135deg, #fce4ec, #f8bbd0);
+      background: linear-gradient(135deg, #fff0f5, #ffe4e1);
       border: 1px solid #f48fb1;
       border-radius: 14px;
       padding: 10px;
       text-align: center;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       font-weight: bold;
-      color: #880e4f;
+      color: #ad1457;
       cursor: pointer;
       transition: transform 0.1s, background 0.2s;
       box-shadow: 0 2px 5px rgba(0,0,0,0.05);
@@ -454,7 +466,7 @@
     <section id="chat" class="tab-content active">
       <div class="chat-messages" id="chatBox"></div>
       
-      <!-- חלונית אימוג'ים -->
+      <!-- חלונית אימוג'ים מדויקת -->
       <div class="gchat-emoji-picker-modal" id="emojiPicker">
         <div class="gchat-picker-header">
           <input type="text" class="gchat-picker-search" placeholder="חיפוש אימוג'י..." oninput="filterEmojis(this.value)">
@@ -462,19 +474,10 @@
         <div class="gchat-picker-grid" id="emojiGrid"></div>
       </div>
 
-      <!-- פאנל מדבקות חמודות בסגנון WhatsApp -->
+      <!-- פאנל מדבקות מעוצבות לפי זכר/נקבה -->
       <div class="stickers-picker-modal" id="stickersPicker">
         <div style="font-size: 0.8rem; font-weight: bold; margin-bottom: 8px; color: #e1306c; text-align: center;">בחר מדבקה לשליחה 💕</div>
-        <div class="stickers-grid">
-          <div class="sticker-item" onclick="sendSticker('שרוף עליך! 🔥❤️')">שרוף עליך! 🔥</div>
-          <div class="sticker-item" onclick="sendSticker('מכור עליך 👑💎')">מכור עליך 👑</div>
-          <div class="sticker-item" onclick="sendSticker('החיים שלי 😍✨')">החיים שלי 😍</div>
-          <div class="sticker-item" onclick="sendSticker('אין כמוך בעולם! 🌟')">אין כמוך בעולם! 🌟</div>
-          <div class="sticker-item" onclick="sendSticker('מתגעגע אלייך 🥺❤️')">מתגעגע אלייך 🥺</div>
-          <div class="sticker-item" onclick="sendSticker('אלוף העולם 🏆🔥')">אלוף העולם 🏆</div>
-          <div class="sticker-item" onclick="sendSticker('חולה על הלב שלך 💖')">חולה על הלב שלך 💖</div>
-          <div class="sticker-item" onclick="sendSticker('נסיך שלי 🦁👑')">נסיך שלי 🦁</div>
-        </div>
+        <div class="stickers-grid" id="stickersGridContent"></div>
       </div>
 
       <div class="chat-input-area">
@@ -554,12 +557,11 @@
     const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 
     // רשימת האימוג'ים המדויקת שביקשת
-    const reactionAndChatEmojis = [
-      "👍","😍","😱","🏆","🔥","⚡","🦁","🎉","💥","👑","🥲","🎯","🤩","🥰","💎","🫶","❤️","👀","🚀","🤗","🙏","💯","💔","👌","🫠","🥳",
-      "😂","😊","🥹","✨","☕","🌟","🌹","🌸","🌺","😎","😃","😄","😁","קיס","💋","😘","😗"
+    const requestedEmojis = [
+      "👍","😍","😱","🏆","🔥","⚡","🦁","🎉","💥","👑","🥲","🎯","🤩","🥰","💎","🫶","❤️","👀","🚀","🤗","🙏","💯","💔","👌","🫠","🥳"
     ];
 
-    function buildEmojiGrid(list = reactionAndChatEmojis) {
+    function buildEmojiGrid(list = requestedEmojis) {
       const grid = document.getElementById('emojiGrid');
       grid.innerHTML = '';
       list.forEach(emoji => {
@@ -572,8 +574,46 @@
     buildEmojiGrid();
 
     function filterEmojis(query) {
-      const filtered = reactionAndChatEmojis.filter(e => e.includes(query));
+      const filtered = requestedEmojis.filter(e => e.includes(query));
       buildEmojiGrid(filtered);
+    }
+
+    function updateStickersList() {
+      const grid = document.getElementById('stickersGridContent');
+      grid.innerHTML = '';
+      
+      let stickers = [];
+      if (currentUser === 'דני') {
+        stickers = [
+          "שרוף עליך! 🔥❤️",
+          "מכור עליך 👑💎",
+          "החיים שלי 😍✨",
+          "אין כמוך בעולם! 🌟",
+          "מתגעגע אליך 🥺❤️",
+          "אלוף העולם 🏆🔥",
+          "חולה על הלב שלך 💖",
+          "המלך שלי 🦁👑"
+        ];
+      } else {
+        stickers = [
+          "שרופה עליך! 🔥❤️",
+          "מכורה עליך 👑💎",
+          "החיים שלי 😍✨",
+          "אין כמוך בעולם! 🌟",
+          "מתגעגעת אליך 🥺❤️",
+          "אלוף העולם 🏆🔥",
+          "חולה על הלב שלך 💖",
+          "המלך שלי 🦁👑"
+        ];
+      }
+
+      stickers.forEach(stk => {
+        const div = document.createElement('div');
+        div.className = 'sticker-item';
+        div.innerText = stk;
+        div.onclick = () => sendSticker(stk);
+        grid.appendChild(div);
+      });
     }
 
     let appData = {
@@ -591,6 +631,7 @@
     function updateHeaderUser() {
       document.getElementById('userDisplay').innerText = `משתמש: ${currentUser} (לחץ להחלפה)`;
       updateGenderBasedTexts();
+      updateStickersList();
     }
     updateHeaderUser();
 
@@ -622,7 +663,7 @@
           <option value="זכות עצומה היא לי שיש לי קשר מיוחד כזה איתך 🌟">זכות עצומה היא לי שיש לי קשר מיוחד כזה איתך 🌟</option>
           <option value="תודה שאת תמיד שם להקשיב ולתמוך 🥹">תודה שאת תמיד שם להקשיב ולתמוך 🥹</option>
           <option value="את הדבר הכי מיוחד ומוערך שיש בעולם ✨">את הדבר הכי מיוחד ומוערך שיש בעולם ✨</option>
-          <option value="שולח לך חיבוק ענק של חיזוק והערכה! 🤗">שולח לך חיבוק ענק של חיזוק והערכה! 🤗</option>
+          <option value="שולח לך חיבוק ענק! 🤗">שולח לך חיבוק ענק! 🤗</option>
           <option value="מאחל לך שפע של ברכה, נחת ושמחה בלב 🌺">מאחל לך שפע של ברכה, נחת ושמחה בלב 🌺</option>
           <option value="כיף ענק לדעת שיש מי שמבינה אותי כל כך לעומק 🥰">כיף ענק לדעת שיש מי שמבינה אותי כל כך לעומק 🥰</option>
           <option value="שהיום שלך יהיה מלא באור, חיוכים וסיעתא דשמיא ☀️">שהיום שלך יהיה מלא באור, חיוכים וסיעתא דשמיא ☀️</option>
@@ -655,7 +696,7 @@
           <option value="זכות עצומה היא לי שיש לי קשר מיוחד כזה איתך 🌟">זכות עצומה היא לי שיש לי קשר מיוחד כזה איתך 🌟</option>
           <option value="תודה שאתה תמיד שם להקשיב ולתמוך 🥹">תודה שאתה תמיד שם להקשיב ולתמוך 🥹</option>
           <option value="אתה הדבר הכי מיוחד ומוערך שיש בעולם ✨">אתה הדבר הכי מיוחד ומוערך שיש בעולם ✨</option>
-          <option value="שולחת לך חיבוק ענק של חיזוק והערכה! 🤗">שולחת לך חיבוק ענק של חיזוק והערכה! 🤗</option>
+          <option value="שולחת לך חיבוק ענק! 🤗">שולחת לך חיבוק ענק! 🤗</option>
           <option value="מאחלת לך שפע של ברכה, נחת ושמחה בלב 🌺">מאחלת לך שפע של ברכה, נחת ושמחה בלב 🌺</option>
           <option value="כיף ענק לדעת שיש מי שמבין אותי כל כך לעומק 🥰">כיף ענק לדעת שיש מי שמבין אותי כל כך לעומק 🥰</option>
           <option value="שהיום שלך יהיה מלא באור, חיוכים וסיעתא דשמיא ☀️">שהיום שלך יהיה מלא באור, חיוכים וסיעתא דשמיא ☀️</option>
@@ -721,8 +762,8 @@
       appData.messages.push({
         id: Date.now(),
         author: currentUser,
-        text: `🏷️ מדבקה: ${stickerText}`,
-        type: 'text',
+        text: stickerText,
+        type: 'sticker',
         reactions: {},
         timestamp: Date.now()
       });
@@ -735,7 +776,6 @@
     function sendRemoteAction(type, text) {
       appData.hug = { sender: currentUser, type: type, timestamp: Date.now() };
       saveDatabase();
-      triggerActionEffect(currentUser, type);
     }
 
     function triggerActionEffect(senderName, type) {
@@ -765,6 +805,7 @@
           if (json.record && json.record.messages) {
             if (json.record.hug && json.record.hug.timestamp > lastActionTimestamp) {
               lastActionTimestamp = json.record.hug.timestamp;
+              // מציג את החיבוק/נשיקה אך ורק אם נשלח ע"י הצד השני
               if (json.record.hug.sender && json.record.hug.sender !== currentUser) {
                 triggerActionEffect(json.record.hug.sender, json.record.hug.type);
               }
@@ -910,19 +951,10 @@
         const wrapper = document.createElement('div');
         wrapper.className = msg.author === currentUser ? 'message-wrapper sent' : 'message-wrapper received';
 
-        // סרגל תגובות צף שמופיע בריחוף מעל ההודעה
+        // סרגל תגובות צף שמופיע אך ורק בריחוף מעל ההודעה עם האימוג'ים המבוקשים
         const reactionBar = document.createElement('div');
         reactionBar.className = 'gchat-reaction-bar';
-        reactionBar.innerHTML = `
-          <span onclick="addReaction(${msg.id}, '👍')">👍</span>
-          <span onclick="addReaction(${msg.id}, '😍')">😍</span>
-          <span onclick="addReaction(${msg.id}, '❤️')">❤️</span>
-          <span onclick="addReaction(${msg.id}, '🔥')">🔥</span>
-          <span onclick="addReaction(${msg.id}, '👑')">👑</span>
-          <span onclick="addReaction(${msg.id}, '🥰')">🥰</span>
-          <span onclick="addReaction(${msg.id}, '🫶')">🫶</span>
-          <span onclick="addReaction(${msg.id}, '🎉')">🎉</span>
-        `;
+        reactionBar.innerHTML = requestedEmojis.map(emo => `<span onclick="addReaction(${msg.id}, '${emo}')">${emo}</span>`).join('');
 
         const msgDiv = document.createElement('div');
         msgDiv.className = 'message';
@@ -930,6 +962,8 @@
         let innerHtml = `<div class="message-author">${msg.author}</div>`;
         if (msg.type === 'image') {
           innerHtml += `<img src="${msg.text}" class="img-preview">`;
+        } else if (msg.type === 'sticker') {
+          innerHtml += `<div class="chat-sticker-bubble">${msg.text}</div>`;
         } else {
           innerHtml += `<div>${msg.text}</div>`;
         }
@@ -957,26 +991,53 @@
       chatBox.scrollTop = chatBox.scrollHeight;
     }
 
+    // פונקציית כיווץ תמונות אוטומטית למניעת היעלמות קבצים
     function uploadImageFromChat(event) {
       const file = event.target.files[0];
       if (file) {
         const reader = new FileReader();
         reader.onload = function(e) {
-          const base64Img = e.target.result;
-          appData.messages.push({
-            id: Date.now(),
-            author: currentUser,
-            text: base64Img,
-            type: 'image',
-            timestamp: Date.now()
-          });
-          appData.gallery.push({
-            author: currentUser,
-            img: base64Img,
-            timestamp: Date.now()
-          });
-          renderAll();
-          saveDatabase();
+          const img = new Image();
+          img.onload = function() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const MAX_WIDTH = 800;
+            const MAX_HEIGHT = 800;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+
+            appData.messages.push({
+              id: Date.now(),
+              author: currentUser,
+              text: compressedBase64,
+              type: 'image',
+              timestamp: Date.now()
+            });
+            appData.gallery.push({
+              author: currentUser,
+              img: compressedBase64,
+              timestamp: Date.now()
+            });
+            renderAll();
+            saveDatabase();
+          };
+          img.src = e.target.result;
         };
         reader.readAsDataURL(file);
       }
@@ -987,13 +1048,40 @@
       if (file) {
         const reader = new FileReader();
         reader.onload = function(e) {
-          appData.gallery.push({
-            author: currentUser,
-            img: e.target.result,
-            timestamp: Date.now()
-          });
-          renderGallery();
-          saveDatabase();
+          const img = new Image();
+          img.onload = function() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const MAX_WIDTH = 800;
+            const MAX_HEIGHT = 800;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+
+            appData.gallery.push({
+              author: currentUser,
+              img: compressedBase64,
+              timestamp: Date.now()
+            });
+            renderGallery();
+            saveDatabase();
+          };
+          img.src = e.target.result;
         };
         reader.readAsDataURL(file);
       }
