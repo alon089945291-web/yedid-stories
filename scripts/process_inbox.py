@@ -6,6 +6,7 @@
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import zipfile
@@ -47,14 +48,38 @@ def base_opts():
     return o
 
 
+def clean_label(text):
+    """שם תצוגה בטוח: בלי תווים שאסורים בשם קובץ או שמפרשים אותם כפקודה."""
+    text = re.sub(r'[\\/:*?"<>|#\r\n\t]', " ", text or "")
+    text = re.sub(r"\s+", " ", text).strip(" .")
+    return text[:100]
+
+
 def gh_release(tag, title, files):
-    """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים."""
+    """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים.
+
+    files: רשימה של נתיבים, או של זוגות (נתיב, שם_תצוגה).
+    הקובץ עצמו נשמר בשם בטוח, והשם היפה מופיע כ"תווית" (label) שהתוסף מציג.
+    """
     subprocess.run(
         ["gh", "release", "create", tag, "--title", title, "--notes", "נוצר אוטומטית"],
         check=False,
     )
-    if files:
-        subprocess.run(["gh", "release", "upload", tag, *[str(f) for f in files], "--clobber"], check=True)
+    args = []
+    for item in files or []:
+        if isinstance(item, tuple):
+            path, label = item
+            args.append(f"{path}#{label}" if label else str(path))
+        else:
+            args.append(str(item))
+    if args:
+        try:
+            subprocess.run(["gh", "release", "upload", tag, *args, "--clobber"], check=True)
+        except subprocess.CalledProcessError:
+            # רשת ביטחון: אם ההעלאה עם שם התצוגה נכשלה, מעלים בלי שם תצוגה
+            plain = [a.split("#", 1)[0] for a in args]
+            print("העלאה עם שם תצוגה נכשלה, מנסה שוב בלי שם תצוגה")
+            subprocess.run(["gh", "release", "upload", tag, *plain, "--clobber"], check=True)
 
 
 def run_list():
@@ -136,7 +161,16 @@ def run_download():
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as z:
         for f in files:
             z.write(f, arcname=f.name)
-    upload = [zip_path]
+    # שם התצוגה: כותרת הסרטון (בלי ה-id שבסוף). כמה סרטונים: הראשון + "ועוד N"
+    titles = [clean_label(re.sub(r"\s*\[[^\]]*\]$", "", f.stem)) for f in files]
+    titles = [t for t in titles if t]
+    if not titles:
+        label = f"videos-{RUN_ID}.zip"
+    elif len(titles) == 1:
+        label = f"{titles[0]}.zip"
+    else:
+        label = f"{titles[0]} ועוד {len(titles) - 1}.zip"
+    upload = [(zip_path, label)]
 
     gh_release(f"dl-{RUN_ID}", f"הורדה #{RUN_ID}", upload)
     print(f"הועלו {len(upload)} קבצים")
