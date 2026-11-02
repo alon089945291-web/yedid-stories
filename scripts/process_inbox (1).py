@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""
+רץ בתוך GitHub Actions (downloader.yml).
+קורא url/urls/mode/quality מתוך משתני הסביבה, מריץ yt-dlp,
+ומפרסם את התוצאה כ-Release ב-GitHub (שהתוסף קורא משם).
+"""
+import json
+import os
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
+
+import yt_dlp
+
+MODE = os.environ.get("MODE", "download").strip() or "download"
+QUALITY = os.environ.get("QUALITY", "best").strip() or "best"
+URL = os.environ.get("URL", "").strip()
+URLS = [u.strip() for u in os.environ.get("URLS", "").splitlines() if u.strip()]
+WHOLE = os.environ.get("WHOLE", "false").strip().lower() == "true"
+RUN_ID = os.environ.get("RUN_ID", "0")
+REPO = os.environ.get("GITHUB_REPOSITORY", "")
+
+COOKIES = "cookies.txt" if Path("cookies.txt").exists() else None
+DOWNLOAD_DIR = Path("downloads")
+DOWNLOAD_DIR.mkdir(exist_ok=True)
+
+FORMATS = {
+    "best": "bestvideo*+bestaudio/best",
+    "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+    "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
+    "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
+    "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
+    "audio": "bestaudio/best",
+}
+
+
+def base_opts():
+    o = {
+        "quiet": True,
+        "no_warnings": True,
+        "ignoreerrors": True,
+        "noprogress": True,
+    }
+    if COOKIES:
+        o["cookiefile"] = COOKIES
+    return o
+
+
+def gh_release(tag, title, files):
+    """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים."""
+    subprocess.run(
+        ["gh", "release", "create", tag, "--title", title, "--notes", "נוצר אוטומטית"],
+        check=False,
+    )
+    if files:
+        subprocess.run(["gh", "release", "upload", tag, *[str(f) for f in files], "--clobber"], check=True)
+
+
+def run_list():
+    target = URL
+    if not target:
+        print("לא התקבל url"); sys.exit(1)
+    opts = base_opts()
+    opts.update({"extract_flat": "in_playlist", "skip_download": True})
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(target, download=False)
+
+    entries = info.get("entries") if info else None
+    videos = []
+    if entries:
+        for e in entries:
+            if not e:
+                continue
+            vid_url = e.get("url") or e.get("webpage_url")
+            if vid_url and not vid_url.startswith("http"):
+                vid_id = e.get("id") or vid_url
+                vid_url = f"https://www.youtube.com/watch?v={vid_id}"
+            videos.append({
+                "title": e.get("title") or e.get("id") or "ללא שם",
+                "url": vid_url,
+                "duration": e.get("duration"),
+            })
+    elif info:
+        videos.append({
+            "title": info.get("title") or "ללא שם",
+            "url": info.get("webpage_url") or target,
+            "duration": info.get("duration"),
+        })
+
+    data = {
+        "title": (info or {}).get("title") or "",
+        "url": target,
+        "resolved_url": (info or {}).get("webpage_url") or target,
+        "videos": videos,
+    }
+    Path("list.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    gh_release(f"list-{RUN_ID}", f"רשימה #{RUN_ID}", [Path("list.json")])
+    print(f"נמצאו {len(videos)} סרטונים")
+
+
+def run_download():
+    if URLS:
+        targets = URLS
+        no_playlist = True
+    elif WHOLE and URL:
+        targets = [URL]
+        no_playlist = False
+    elif URL:
+        targets = [URL]
+        no_playlist = True
+    else:
+        print("לא התקבל url/urls"); sys.exit(1)
+
+    opts = base_opts()
+    opts["format"] = FORMATS.get(QUALITY, FORMATS["best"])
+    opts["outtmpl"] = str(DOWNLOAD_DIR / "%(title).150B [%(id)s].%(ext)s")
+    opts["merge_output_format"] = "mp4"
+    opts["no_playlist"] = no_playlist
+    if QUALITY == "audio":
+        opts["postprocessors"] = [{
+            "key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192",
+        }]
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        for t in targets:
+            ydl.download([t])
+
+    files = sorted(p for p in DOWNLOAD_DIR.iterdir() if p.is_file())
+    if not files:
+        print("לא ירד שום קובץ (סרטון לא נתמך, או שחסרות עוגיות)"); sys.exit(1)
+
+    # תמיד אורזים ל-ZIP בשם בטוח (אותיות ומספרים בלבד). כך אין בעיה עם שמות
+    # בעברית או עם תווים כמו [ ] ( ) שגורמים ל-gh להיכשל, וההורדה זהה תמיד.
+    zip_path = Path(f"videos-{RUN_ID}.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as z:
+        for f in files:
+            z.write(f, arcname=f.name)
+    upload = [zip_path]
+
+    gh_release(f"dl-{RUN_ID}", f"הורדה #{RUN_ID}", upload)
+    print(f"הועלו {len(upload)} קבצים")
+
+
+if __name__ == "__main__":
+    if not REPO:
+        print("GITHUB_REPOSITORY חסר"); sys.exit(1)
+    if MODE == "list":
+        run_list()
+    else:
+        run_download()
