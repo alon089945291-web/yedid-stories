@@ -1,0 +1,65 @@
+name: downloader
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "download | list"
+        default: "download"
+      quality:
+        default: "best"
+      url:
+        default: ""
+      urls:
+        default: ""
+      whole:
+        default: "false"
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: התקנת כלים
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg
+          python -m pip install -U pip
+          python -m pip install -U yt-dlp
+
+      - name: פענוח עוגיות יוטיוב/טיקטוק (אם נשלחו)
+        env:
+          COOKIES_B64: ${{ secrets.YT_COOKIES_B64 }}
+        run: |
+          python - <<'PY'
+          import base64, gzip, os, sys
+          b64 = os.environ.get("COOKIES_B64", "")
+          if not b64:
+              sys.exit(0)
+          raw = base64.b64decode(b64)
+          if raw[:2] == b"\x1f\x8b":
+              raw = gzip.decompress(raw)
+          with open("cookies.txt", "wb") as f:
+              f.write(raw)
+          print("cookies.txt נכתב,", len(raw), "בייט")
+          PY
+
+      - name: הרצה
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          MODE: ${{ github.event.inputs.mode }}
+          QUALITY: ${{ github.event.inputs.quality }}
+          URL: ${{ github.event.inputs.url }}
+          URLS: ${{ github.event.inputs.urls }}
+          WHOLE: ${{ github.event.inputs.whole }}
+        run: python scripts/process_inbox.py
