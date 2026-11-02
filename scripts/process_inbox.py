@@ -48,26 +48,13 @@ def base_opts():
 
 
 def gh_release(tag, title, files):
-    """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים.
-
-    שמות קבצים עם תווים כמו [ ] ( ) # גורמים ל-gh לפרש אותם כתבנית חיפוש
-    ולכשול, לכן מעלים בשם בטוח (ASCII) ומציגים את השם המקורי כתווית.
-    """
+    """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים."""
     subprocess.run(
         ["gh", "release", "create", tag, "--title", title, "--notes", "נוצר אוטומטית"],
         check=False,
     )
-    if not files:
-        return
-    args = []
-    for i, f in enumerate(files, 1):
-        f = Path(f)
-        safe = f.with_name(f"file{i}{f.suffix}")
-        if safe != f:
-            f.rename(safe)
-        label = f.stem.replace("#", " ")
-        args.append(f"{safe}#{label}{f.suffix}")
-    subprocess.run(["gh", "release", "upload", tag, *args, "--clobber"], check=True)
+    if files:
+        subprocess.run(["gh", "release", "upload", tag, *[str(f) for f in files], "--clobber"], check=True)
 
 
 def run_list():
@@ -143,14 +130,13 @@ def run_download():
     if not files:
         print("לא ירד שום קובץ (סרטון לא נתמך, או שחסרות עוגיות)"); sys.exit(1)
 
-    if len(files) > 1:
-        zip_path = Path(f"videos-{RUN_ID}.zip")
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-            for f in files:
-                z.write(f, arcname=f.name)
-        upload = [zip_path]
-    else:
-        upload = files
+    # תמיד אורזים ל-ZIP בשם בטוח (אותיות ומספרים בלבד). כך אין בעיה עם שמות
+    # בעברית או עם תווים כמו [ ] ( ) שגורמים ל-gh להיכשל, וההורדה זהה תמיד.
+    zip_path = Path(f"videos-{RUN_ID}.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as z:
+        for f in files:
+            z.write(f, arcname=f.name)
+    upload = [zip_path]
 
     gh_release(f"dl-{RUN_ID}", f"הורדה #{RUN_ID}", upload)
     print(f"הועלו {len(upload)} קבצים")
