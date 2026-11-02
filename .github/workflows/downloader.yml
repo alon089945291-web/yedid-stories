@@ -28,12 +28,16 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: התקנת כלים
         run: |
           sudo apt-get update -y
           sudo apt-get install -y ffmpeg
           python -m pip install -U pip
-          python -m pip install -U yt-dlp
+          python -m pip install -U "yt-dlp[default]"
 
       - name: פענוח עוגיות יוטיוב/טיקטוק (אם נשלחו)
         env:
