@@ -48,13 +48,26 @@ def base_opts():
 
 
 def gh_release(tag, title, files):
-    """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים."""
+    """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים.
+
+    שמות קבצים עם תווים כמו [ ] ( ) # גורמים ל-gh לפרש אותם כתבנית חיפוש
+    ולכשול, לכן מעלים בשם בטוח (ASCII) ומציגים את השם המקורי כתווית.
+    """
     subprocess.run(
         ["gh", "release", "create", tag, "--title", title, "--notes", "נוצר אוטומטית"],
         check=False,
     )
-    if files:
-        subprocess.run(["gh", "release", "upload", tag, *[str(f) for f in files], "--clobber"], check=True)
+    if not files:
+        return
+    args = []
+    for i, f in enumerate(files, 1):
+        f = Path(f)
+        safe = f.with_name(f"file{i}{f.suffix}")
+        if safe != f:
+            f.rename(safe)
+        label = f.stem.replace("#", " ")
+        args.append(f"{safe}#{label}{f.suffix}")
+    subprocess.run(["gh", "release", "upload", tag, *args, "--clobber"], check=True)
 
 
 def run_list():
