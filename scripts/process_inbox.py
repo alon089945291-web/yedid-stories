@@ -57,6 +57,20 @@ def gh_release(tag, title, files):
         subprocess.run(["gh", "release", "upload", tag, *[str(f) for f in files], "--clobber"], check=True)
 
 
+def flatten_entries(entries, depth=0):
+    """טיקטוק (וערוצים בכלל) לפעמים מחזירים רשימה עטופה בעוד שכבה אחת
+       (למשל: ["לשונית סרטונים"] -> [סרטון, סרטון, ...]). פותחים עד שכבה אחת נוספת."""
+    out = []
+    for e in entries or []:
+        if not e:
+            continue
+        if e.get("entries") and depth < 2:
+            out.extend(flatten_entries(e.get("entries"), depth + 1))
+        else:
+            out.append(e)
+    return out
+
+
 def run_list():
     target = URL
     if not target:
@@ -66,7 +80,8 @@ def run_list():
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(target, download=False)
 
-    entries = info.get("entries") if info else None
+    raw_entries = info.get("entries") if info else None
+    entries = flatten_entries(list(raw_entries), 0) if raw_entries else None
     videos = []
     if entries:
         for e in entries:
@@ -128,4 +143,25 @@ def run_download():
 
     files = sorted(p for p in DOWNLOAD_DIR.iterdir() if p.is_file())
     if not files:
-        print("לא ירד שום קובץ (סרטון לא נתמך, או שחסרות עוגיות)");
+        print("לא ירד שום קובץ (סרטון לא נתמך, או שחסרות עוגיות)"); sys.exit(1)
+
+    if len(files) > 1:
+        zip_path = Path(f"videos-{RUN_ID}.zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            for f in files:
+                z.write(f, arcname=f.name)
+        upload = [zip_path]
+    else:
+        upload = files
+
+    gh_release(f"dl-{RUN_ID}", f"הורדה #{RUN_ID}", upload)
+    print(f"הועלו {len(upload)} קבצים")
+
+
+if __name__ == "__main__":
+    if not REPO:
+        print("GITHUB_REPOSITORY חסר"); sys.exit(1)
+    if MODE == "list":
+        run_list()
+    else:
+        run_download()
