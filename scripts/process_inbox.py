@@ -6,7 +6,6 @@
 """
 import json
 import os
-import re
 import subprocess
 import sys
 import zipfile
@@ -28,10 +27,10 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 FORMATS = {
     "best": "bestvideo*+bestaudio/best",
-    "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-    "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-    "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-    "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
+    "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+    "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+    "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+    "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
     "audio": "bestaudio/best",
 }
 
@@ -48,38 +47,14 @@ def base_opts():
     return o
 
 
-def clean_label(text):
-    """שם תצוגה בטוח: בלי תווים שאסורים בשם קובץ או שמפרשים אותם כפקודה."""
-    text = re.sub(r'[\\/:*?"<>|#\r\n\t]', " ", text or "")
-    text = re.sub(r"\s+", " ", text).strip(" .")
-    return text[:100]
-
-
 def gh_release(tag, title, files):
-    """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים.
-
-    files: רשימה של נתיבים, או של זוגות (נתיב, שם_תצוגה).
-    הקובץ עצמו נשמר בשם בטוח, והשם היפה מופיע כ"תווית" (label) שהתוסף מציג.
-    """
+    """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים."""
     subprocess.run(
         ["gh", "release", "create", tag, "--title", title, "--notes", "נוצר אוטומטית"],
         check=False,
     )
-    args = []
-    for item in files or []:
-        if isinstance(item, tuple):
-            path, label = item
-            args.append(f"{path}#{label}" if label else str(path))
-        else:
-            args.append(str(item))
-    if args:
-        try:
-            subprocess.run(["gh", "release", "upload", tag, *args, "--clobber"], check=True)
-        except subprocess.CalledProcessError:
-            # רשת ביטחון: אם ההעלאה עם שם התצוגה נכשלה, מעלים בלי שם תצוגה
-            plain = [a.split("#", 1)[0] for a in args]
-            print("העלאה עם שם תצוגה נכשלה, מנסה שוב בלי שם תצוגה")
-            subprocess.run(["gh", "release", "upload", tag, *plain, "--clobber"], check=True)
+    if files:
+        subprocess.run(["gh", "release", "upload", tag, *[str(f) for f in files], "--clobber"], check=True)
 
 
 def run_list():
@@ -91,7 +66,6 @@ def run_list():
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(target, download=False)
 
-    is_search = target.lower().startswith("ytsearch")
     entries = info.get("entries") if info else None
     videos = []
     if entries:
@@ -106,7 +80,6 @@ def run_list():
                 "title": e.get("title") or e.get("id") or "ללא שם",
                 "url": vid_url,
                 "duration": e.get("duration"),
-                "channel": e.get("channel") or e.get("uploader") or "",
             })
     elif info:
         videos.append({
@@ -115,15 +88,11 @@ def run_list():
             "duration": info.get("duration"),
         })
 
-    title = (info or {}).get("title") or ""
-    if is_search:
-        title = "חיפוש: " + target.split(":", 1)[1]
     data = {
-        "title": title,
+        "title": (info or {}).get("title") or "",
         "url": target,
         "resolved_url": (info or {}).get("webpage_url") or target,
         "videos": videos,
-        "search": is_search,
     }
     Path("list.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     gh_release(f"list-{RUN_ID}", f"רשימה #{RUN_ID}", [Path("list.json")])
@@ -159,33 +128,4 @@ def run_download():
 
     files = sorted(p for p in DOWNLOAD_DIR.iterdir() if p.is_file())
     if not files:
-        print("לא ירד שום קובץ (סרטון לא נתמך, או שחסרות עוגיות)"); sys.exit(1)
-
-    # תמיד אורזים ל-ZIP בשם בטוח (אותיות ומספרים בלבד). כך אין בעיה עם שמות
-    # בעברית או עם תווים כמו [ ] ( ) שגורמים ל-gh להיכשל, וההורדה זהה תמיד.
-    zip_path = Path(f"videos-{RUN_ID}.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as z:
-        for f in files:
-            z.write(f, arcname=f.name)
-    # שם התצוגה: כותרת הסרטון (בלי ה-id שבסוף). כמה סרטונים: הראשון + "ועוד N"
-    titles = [clean_label(re.sub(r"\s*\[[^\]]*\]$", "", f.stem)) for f in files]
-    titles = [t for t in titles if t]
-    if not titles:
-        label = f"videos-{RUN_ID}.zip"
-    elif len(titles) == 1:
-        label = f"{titles[0]}.zip"
-    else:
-        label = f"{titles[0]} ועוד {len(titles) - 1}.zip"
-    upload = [(zip_path, label)]
-
-    gh_release(f"dl-{RUN_ID}", f"הורדה #{RUN_ID}", upload)
-    print(f"הועלו {len(upload)} קבצים")
-
-
-if __name__ == "__main__":
-    if not REPO:
-        print("GITHUB_REPOSITORY חסר"); sys.exit(1)
-    if MODE == "list":
-        run_list()
-    else:
-        run_download()
+        print("לא ירד שום קובץ (סרטון לא נתמך, או שחסרות עוגיות)");
