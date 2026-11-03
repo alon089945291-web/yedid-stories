@@ -6,6 +6,7 @@
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import zipfile
@@ -47,6 +48,24 @@ def base_opts():
     return o
 
 
+def safe_name(path):
+    """gh מפרשת את שם הקובץ כתבנית חיפוש (glob), ולכן סוגריים מרובעים [ ]
+       וכן * ? { } \\ # בשם גורמים ל-"no matches found".
+       כאן מנקים את השם בפועל (משנים את הקובץ בדיסק) ומחזירים את הנתיב החדש."""
+    p = Path(path)
+    stem = p.stem.replace("[", "(").replace("]", ")")
+    stem = re.sub(r"[{}*?\\#]", "", stem)
+    stem = re.sub(r"\s+", " ", stem).strip() or "video"
+    new = p.with_name(stem + p.suffix)
+    n = 1
+    while new.exists() and new != p:
+        new = p.with_name(f"{stem} ({n}){p.suffix}")
+        n += 1
+    if new != p:
+        p.rename(new)
+    return new
+
+
 def gh_release(tag, title, files):
     """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים."""
     subprocess.run(
@@ -54,6 +73,7 @@ def gh_release(tag, title, files):
         check=False,
     )
     if files:
+        files = [safe_name(f) for f in files]
         subprocess.run(["gh", "release", "upload", tag, *[str(f) for f in files], "--clobber"], check=True)
 
 
@@ -129,7 +149,8 @@ def run_download():
 
     opts = base_opts()
     opts["format"] = FORMATS.get(QUALITY, FORMATS["best"])
-    opts["outtmpl"] = str(DOWNLOAD_DIR / "%(title).150B [%(id)s].%(ext)s")
+    # סוגריים עגולים במקום מרובעים – כדי שהשם יהיה בטוח כבר מההתחלה
+    opts["outtmpl"] = str(DOWNLOAD_DIR / "%(title).150B (%(id)s).%(ext)s")
     opts["merge_output_format"] = "mp4"
     opts["no_playlist"] = no_playlist
     if QUALITY == "audio":
@@ -144,6 +165,9 @@ def run_download():
     files = sorted(p for p in DOWNLOAD_DIR.iterdir() if p.is_file())
     if not files:
         print("לא ירד שום קובץ (סרטון לא נתמך, או שחסרות עוגיות)"); sys.exit(1)
+
+    # ניקוי שמות הקבצים לפני האריזה וההעלאה
+    files = sorted(safe_name(f) for f in files)
 
     if len(files) > 1:
         zip_path = Path(f"videos-{RUN_ID}.zip")
