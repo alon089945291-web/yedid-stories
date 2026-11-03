@@ -1,0 +1,40 @@
+name: tiktok
+
+on:
+  workflow_dispatch:
+    inputs:
+      q:
+        description: "מה לחפש"
+        default: ""
+      type:
+        description: "video | tag | user | all"
+        default: "video"
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: התקנת דפדפן
+        run: |
+          python -m pip install -U pip
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: חיפוש
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          Q: ${{ github.event.inputs.q }}
+          TYPE: ${{ github.event.inputs.type }}
+        run: python scripts/tiktok_search.py
