@@ -91,6 +91,7 @@ def run_list():
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(target, download=False)
 
+    is_search = target.lower().startswith("ytsearch")
     entries = info.get("entries") if info else None
     videos = []
     if entries:
@@ -105,6 +106,7 @@ def run_list():
                 "title": e.get("title") or e.get("id") or "ללא שם",
                 "url": vid_url,
                 "duration": e.get("duration"),
+                "channel": e.get("channel") or e.get("uploader") or "",
             })
     elif info:
         videos.append({
@@ -113,11 +115,15 @@ def run_list():
             "duration": info.get("duration"),
         })
 
+    title = (info or {}).get("title") or ""
+    if is_search:
+        title = "חיפוש: " + target.split(":", 1)[1]
     data = {
-        "title": (info or {}).get("title") or "",
+        "title": title,
         "url": target,
         "resolved_url": (info or {}).get("webpage_url") or target,
         "videos": videos,
+        "search": is_search,
     }
     Path("list.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     gh_release(f"list-{RUN_ID}", f"רשימה #{RUN_ID}", [Path("list.json")])
