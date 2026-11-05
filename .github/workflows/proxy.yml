@@ -1,0 +1,663 @@
+name: proxy
+run-name: ${{ inputs.request_id || 'nightly' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "search / user / tag / feed / trend / download"
+        required: true
+        default: search
+      query:
+        description: "מילת חיפוש או קישור"
+        required: false
+        default: ""
+      cursor:
+        required: false
+        default: "0"
+      page_size:
+        description: "כמה תוצאות בכל מנה"
+        required: false
+        default: "20"
+      url:
+        description: "קישור לסרטון להורדה"
+        required: false
+        default: ""
+      expand:
+        description: "הרחבת תוצאות לפי יוצרים והאשטגים (1/0)"
+        required: false
+        default: "0"
+      names:
+        description: "שמות לקבצים (JSON: מזהה -> כותרת)"
+        required: false
+        default: "{}"
+      request_id:
+        required: true
+
+  # הורדה לילית: כל לילה בשעה ~02:20 (שעון ישראל, חורף)
+  schedule:
+    - cron: "20 0 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install (search)
+        if: inputs.mode != 'download'
+        run: pip install -q -U --disable-pip-version-check yt-dlp
+
+      - name: Install (download)
+        if: inputs.mode == 'download'
+        run: |
+          # קובץ מוכן – מהיר בהרבה מהתקנה
+          if sudo curl -fsSL --retry 2 -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux; then
+            sudo chmod +x /usr/local/bin/yt-dlp
+          else
+            pip install -q -U --disable-pip-version-check "yt-dlp[default,curl-cffi]"
+          fi
+          yt-dlp --version
+
+      # ---------------- חיפוש ----------------
+      - name: Search
+        if: inputs.mode != 'download'
+        env:
+          MODE: ${{ inputs.mode }}
+          EXPAND: ${{ inputs.expand }}
+          Q: ${{ inputs.query }}
+          CURSOR: ${{ inputs.cursor }}
+          PAGE_SIZE: ${{ inputs.page_size }}
+        run: |
+          mkdir -p out
+          python3 - <<'PY'
+          import os, re, json, time, base64, html, urllib.request, urllib.parse
+          from concurrent.futures import ThreadPoolExecutor
+          import yt_dlp
+
+          UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+          TIKWM = "https://www.tikwm.com"
+          try:
+              PAGE = max(5, min(60, int(os.environ.get("PAGE_SIZE") or 20)))
+          except ValueError:
+              PAGE = 20
+          q = os.environ.get("Q", "").strip()
+          MODE = (os.environ.get("MODE") or "search").strip()
+          EXPAND = (os.environ.get("EXPAND") or "0").strip() == "1"
+          if MODE == "user": q = q.lstrip("@").strip()
+          if MODE == "tag": q = q.lstrip("#").strip()
+          if MODE in ("feed", "trend"): IS_URL = IS_TIKTOK_URL = False
+          try:
+              cursor = int(os.environ.get("CURSOR") or 0)
+          except ValueError:
+              cursor = 0
+          log = []
+          START = time.time()
+
+          def get(url, data=None, headers=None, timeout=10):
+              h = {"User-Agent": UA, "Accept-Language": "he,en;q=0.8", **(headers or {})}
+              body = urllib.parse.urlencode(data).encode() if data else None
+              return urllib.request.urlopen(urllib.request.Request(url, data=body, headers=h), timeout=timeout).read()
+
+          def img(u, headers=None):
+              if not u: return ""
+              try:
+                  return "data:image/jpeg;base64," + base64.b64encode(get(u, headers=headers, timeout=15)).decode()
+              except Exception:
+                  return ""
+
+          def link_of(user, vid, kind="video"):
+              return f"https://www.tiktok.com/@{user}/{kind}/{vid}" if user else f"https://www.tiktok.com/{kind}/{vid}"
+          IS_URL = bool(re.match(r"https?://", q, re.I)) and MODE not in ("feed", "trend")
+          IS_TIKTOK_URL = bool(re.search(r"tiktok\.com/", q, re.I)) and MODE not in ("feed", "trend")
+
+          # ---- דרך 1: tikwm ----
+          def via_tikwm():
+              if MODE != "search": raise RuntimeError("tikwm only for search")
+              if IS_URL and not IS_TIKTOK_URL: raise RuntimeError("not a tiktok link")
+              hdr = {"Origin": TIKWM, "Referer": TIKWM + "/"}
+              def post(path, data):
+                  for i in range(4):
+                      j = json.loads(get(TIKWM + path, data, hdr))
+                      if j.get("code") == 0: return j.get("data") or {}
+                      if "limit" in (j.get("msg") or "").lower(): time.sleep(1.5 * (i + 1)); continue
+                      raise RuntimeError(j.get("msg") or "error")
+                  raise RuntimeError("rate limit")
+              if re.search(r"tiktok\.com/", q, re.I):
+                  d = post("/api/", {"url": q if q.startswith("http") else "https://" + q, "hd": 1})
+                  vids, nxt, more = [d], 0, False
+              else:
+                  d = post("/api/feed/search", {"keywords": q, "count": PAGE, "cursor": cursor, "HD": 1})
+                  vids, nxt, more = d.get("videos") or [], d.get("cursor", cursor + PAGE), bool(d.get("hasMore"))
+              if not vids: raise RuntimeError("no results")
+              absu = lambda u: "" if not u else (u if u.startswith("http") else TIKWM + u)
+              def item(v):
+                  a = v.get("author") or {}
+                  vid, user = str(v.get("video_id") or v.get("id")), a.get("unique_id") or ""
+                  kind = "photo" if v.get("images") else "video"
+                  return {"id": vid, "title": v.get("title") or "", "user": user, "nick": a.get("nickname") or user,
+                          "duration": v.get("duration"), "views": v.get("play_count"), "kind": kind,
+                          "count": len(v.get("images") or []) or None,
+                          "cover": img(absu(v.get("cover") or v.get("origin_cover")), hdr), "link": link_of(user, vid, kind)}
+              with ThreadPoolExecutor(8) as ex:
+                  return list(ex.map(item, vids)), nxt, more
+
+          # ---- דרך 2: מנוע חיפוש + yt-dlp ----
+          LINK_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@([\w.\-]+)/(video|photo)/(\d+)")
+          def collect_links(variants=None, only_user=None):
+              found = {}
+              def add(text):
+                  text = html.unescape(text)
+                  # קישורי Bing מוצפנים: u=a1<base64>
+                  for enc in re.findall(r"[?&]u=a1([A-Za-z0-9_\-]+)", text):
+                      try:
+                          text += " " + base64.urlsafe_b64decode(enc + "=" * (-len(enc) % 4)).decode("utf-8", "ignore")
+                      except Exception:
+                          pass
+                  for user, kind, vid in LINK_RE.findall(urllib.parse.unquote(text)):
+                      if only_user and user.lower() != only_user.lower(): continue
+                      found.setdefault(vid, (user, kind))
+              # וריאציות של החיפוש כדי למצוא יותר סרטונים
+              if variants is None:
+                  base = re.sub(r"^(הרב|הגאון|הרה\"ג|רבי|ר'|רב)\s+", "", q).strip()
+                  variants = []
+                  for t in (q, base, f'"{base}"', f"{base} שיעור" if base != q else ""):
+                      t = t.strip()
+                      if t and t not in variants: variants.append(t)
+              want = cursor + PAGE + 1  # מספיק כדי לדעת שיש עוד
+
+              def bing(term, first):
+                  return get("https://www.bing.com/search?" + urllib.parse.urlencode({"q": term, "count": 50, "first": first})).decode("utf-8", "ignore")
+              def ddg(term, _):
+                  return get("https://html.duckduckgo.com/html/", {"q": term}).decode("utf-8", "ignore")
+              def brave(term, off):
+                  return get("https://search.brave.com/search?" + urllib.parse.urlencode({"q": term, "offset": off})).decode("utf-8", "ignore")
+
+              # גלים: בכל גל שולחים במקביל את העמוד הבא של כל מנוע × כל וריאציה
+              pages = {bing: (1, 51, 101, 151), ddg: (0,), brave: (0, 1, 2, 3)}
+              alive = {(fn, f"site:tiktok.com {v}") for fn in pages for v in variants}
+              dead = set()
+              t0 = time.time()
+              for wave in range(4):
+                  if len(found) >= want or time.time() - t0 > 40: break
+                  jobs = [(fn, term, pages[fn][wave]) for fn, term in sorted(alive, key=lambda x: (variants.index(x[1][16:]), x[0].__name__))
+                          if wave < len(pages[fn]) and fn.__name__ not in dead]
+                  if not jobs: break
+                  def run(job):
+                      fn, term, arg = job
+                      try:
+                          return job, fn(term, arg), None
+                      except Exception as e:
+                          return job, None, e
+                  with ThreadPoolExecutor(len(jobs)) as ex:
+                      results = list(ex.map(run, jobs))
+                  for (fn, term, arg), text, err in results:   # מיזוג לפי סדר קבוע
+                      if err is not None:
+                          log.append(f"{fn.__name__}: {str(err)[:80]}")
+                          if any(c in str(err) for c in ("429", "403")): dead.add(fn.__name__)
+                          alive.discard((fn, term)); continue
+                      before = len(found)
+                      add(text)
+                      if len(found) == before: alive.discard((fn, term))
+                  print(f"wave {wave}: {len(jobs)} requests, {len(found)} links, {time.time() - t0:.1f}s")
+              return [(uk[0], v, uk[1]) for v, uk in found.items()]
+
+          # רשימת סרטונים של יוצר / האשטג דרך yt-dlp (בלי פרטים – מהיר)
+          def flat_list(url, limit):
+              o = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist", "playlistend": limit,
+                   "socket_timeout": 15, "retries": 1, "extractor_retries": 1}
+              with yt_dlp.YoutubeDL(o) as y:
+                  info = y.extract_info(url, download=False)
+              out = []
+              for e in (info.get("entries") or []):
+                  if not e: continue
+                  m = LINK_RE.search(e.get("url") or e.get("webpage_url") or "")
+                  if m: out.append((m.group(1), m.group(3), m.group(2)))
+                  elif e.get("id"):
+                      out.append((e.get("uploader_id") or e.get("uploader") or info.get("uploader_id") or "", str(e["id"]), "video"))
+              print(f"flat {url}: {len(out)} videos")
+              return out
+
+          def merge(*lists):
+              seen, out = set(), []
+              for l in lists:
+                  for u, v, k in l:
+                      if v not in seen: seen.add(v); out.append((u, v, k))
+              return out
+
+          def safe(fn, *a):
+              try: return fn(*a)
+              except Exception as e:
+                  log.append(f"{getattr(fn, '__name__', 'fn')}: {str(e)[:120]}"); return []
+
+          EXPANDED = []
+          def vid_time(v):
+              try: return int(v) >> 32
+              except Exception: return 0
+
+          def round_robin(lists):
+              out, seen = [], set()
+              for i in range(max((len(l) for l in lists), default=0)):
+                  for l in lists:
+                      if i < len(l) and l[i][1] not in seen:
+                          seen.add(l[i][1]); out.append(l[i])
+              return out
+
+          def links_for_mode():
+              want = cursor + PAGE + 1
+              if MODE == "feed":
+                  # הסרטונים האחרונים של כל היוצרים שעוקבים אחריהם – מהחדש לישן
+                  users = [u.lstrip("@") for u in re.split(r"[\s,]+", q) if u.strip()][:30]
+                  with ThreadPoolExecutor(max(1, min(10, len(users)))) as ex:
+                      lists = list(ex.map(lambda u: safe(flat_list, f"https://www.tiktok.com/@{u}", 15) or
+                                          collect_links([f"@{u}", u], only_user=u)[:15], users))
+                  links = merge(*lists)
+                  links.sort(key=lambda x: vid_time(x[1]), reverse=True)
+                  return links
+              if MODE == "trend":
+                  # פופולרי: האשטגים של הקטגוריה (מופרדים בפסיק), עדכניים קודם
+                  tags = [t.strip().lstrip("#") for t in q.split(",") if t.strip()][:5] or ["fyp", "viral", "foryou", "טרנד"]
+                  with ThreadPoolExecutor(len(tags)) as ex:
+                      lists = list(ex.map(lambda t: safe(flat_list, f"https://www.tiktok.com/tag/{urllib.parse.quote(t)}", 80), tags))
+                  links = round_robin(lists)
+                  if len(links) < want:
+                      links = merge(links, collect_links([f"#{t}" for t in tags[:3]] + tags[:2]))
+                  week = time.time() - 14 * 86400
+                  fresh = [l for l in links if vid_time(l[1]) >= week]
+                  return fresh + [l for l in links if l not in fresh]
+              if MODE == "user":
+                  links = safe(flat_list, f"https://www.tiktok.com/@{q}", min(400, want + 20))
+                  if len(links) < want:
+                      links = merge(links, collect_links([f"@{q}", q], only_user=q))
+                  return links
+              if MODE == "tag":
+                  tag = re.sub(r"\s+", "", q)
+                  links = safe(flat_list, f"https://www.tiktok.com/tag/{urllib.parse.quote(tag)}", min(400, want + 20))
+                  if len(links) < want:
+                      links = merge(links, collect_links([f"#{tag}", tag]))
+                  return links
+              links = collect_links()
+              if EXPAND and len(links) < want:
+                  # הרחבה: יוצרים שחוזרים בתוצאות + האשטגים לפי מילות החיפוש
+                  from collections import Counter
+                  users = [u for u, c in Counter(u for u, _, _ in links if u).most_common(3) if c >= 2][:2]
+                  base = re.sub(r"^(הרב|הגאון|הרה\"ג|רבי|ר'|רב)\s+", "", q).strip()
+                  tags = []
+                  for t in (re.sub(r"\s+", "", base), re.sub(r"\s+", "", q)):
+                      if t and t not in tags and len(t) <= 40: tags.append(t)
+                  jobs = [("user", u, f"https://www.tiktok.com/@{u}", 80) for u in users] + \
+                         [("tag", t, f"https://www.tiktok.com/tag/{urllib.parse.quote(t)}", 120) for t in tags[:2]]
+                  with ThreadPoolExecutor(max(1, len(jobs))) as ex:
+                      res = list(ex.map(lambda j: (j, safe(flat_list, j[2], j[3])), jobs))
+                  for (kind, name, _, _), l in res:
+                      if l: EXPANDED.append({"type": kind, "name": name, "count": len(l)})
+                  links = merge(links, *[l for _, l in res])
+              return links
+
+          def via_search_engine():
+              if MODE == "search" and (IS_URL or IS_TIKTOK_URL):
+                  url = q if IS_URL else "https://" + q
+                  page, more = [("", url, "photo" if "/photo/" in url else "video")], False
+              else:
+                  links = links_for_mode()
+                  if not links: raise RuntimeError("no results")
+                  page = [(u, link_of(u, v, k), k) for u, v, k in links[cursor:cursor + PAGE]]
+                  more = len(links) > cursor + PAGE
+              opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, "socket_timeout": 10, "retries": 1, "extractor_retries": 0}
+              def meta(p):
+                  user, url, kind = p
+                  tiktok = "tiktok.com" in url
+                  try:
+                      with yt_dlp.YoutubeDL(opts) as y:
+                          i = y.extract_info(url, download=False)
+                      u = i.get("uploader_id") or i.get("uploader") or i.get("channel") or user or ""
+                      vid = str(i.get("id"))
+                      fmts = i.get("formats") or []
+                      if tiktok and fmts and all((f.get("vcodec") or "none") == "none" for f in fmts): kind = "photo"
+                      return {"id": vid, "title": i.get("description") or i.get("title") or "", "user": u,
+                              "nick": i.get("uploader") or u, "duration": None if kind == "photo" else i.get("duration"),
+                              "views": i.get("view_count"), "kind": kind, "site": (i.get("extractor_key") or "").lower(),
+                              "cover": img(i.get("thumbnail")),
+                              "link": link_of(u, vid, kind) if tiktok and not IS_URL else (i.get("webpage_url") or url)}
+                  except Exception as e:
+                      log.append(f"yt-dlp {url}: {str(e)[:120]}")
+                      m = LINK_RE.search(url or "")
+                      if m:
+                          return {"id": m.group(3), "title": "", "user": m.group(1), "nick": m.group(1), "kind": m.group(2),
+                                  "duration": None, "views": None, "cover": "", "link": url}
+                      if IS_URL:  # קישור מאתר אחר – מחזירים כרטיס בסיסי שאפשר להוריד
+                          return {"id": re.sub(r"\W+", "", url)[-24:], "title": url, "user": urllib.parse.urlparse(url).netloc,
+                                  "nick": "", "kind": "video", "duration": None, "views": None, "cover": "", "link": url}
+                      return None
+              with ThreadPoolExecutor(min(40, max(1, len(page)))) as ex:
+                  items = [x for x in ex.map(meta, page) if x]
+              return items, cursor + PAGE, more
+
+          result = None
+          for name, fn in (("tikwm", via_tikwm), ("search-engine", via_search_engine)):
+              try:
+                  items, nxt, more = fn()
+                  result = {"items": items, "cursor": nxt, "hasMore": more, "source": name, "expanded": EXPANDED, "mode": MODE}
+                  print(f"{name}: {len(items)} videos in {time.time() - START:.1f}s")
+                  break
+              except Exception as e:
+                  log.append(f"{name}: {e}")
+                  print(f"{name} failed: {e}")
+          if result is None:
+              result = {"items": [], "cursor": cursor, "hasMore": False, "error": " | ".join(log)[:500]}
+          result["log"] = log[:20]
+          json.dump(result, open("out/result.json", "w"), ensure_ascii=False)
+          PY
+
+      # ---------------- הורדה ----------------
+      - name: Download
+        if: inputs.mode == 'download'
+        env:
+          URL: ${{ inputs.url }}
+        run: |
+          mkdir -p out
+          cat > /tmp/fallback.py <<'PY'
+          import sys, json, urllib.request, urllib.parse
+          API = "https://www.tikwm.com"
+          H = {"User-Agent": "Mozilla/5.0", "Origin": API, "Referer": API + "/"}
+          req = urllib.request.Request(API + "/api/", data=urllib.parse.urlencode({"url": sys.argv[1], "hd": 1}).encode(), headers=H)
+          d = json.load(urllib.request.urlopen(req, timeout=30))["data"]
+          u = d.get("hdplay") or d.get("play")
+          u = u if u.startswith("http") else API + u
+          name = f"{(d.get('author') or {}).get('unique_id', 'video')}_{d.get('id')}.mp4"
+          open("out/" + name, "wb").write(urllib.request.urlopen(urllib.request.Request(u, headers=H), timeout=120).read())
+          PY
+
+          # פוסט תמונות בטיקטוק: מוריד את כל התמונות (+ הסאונד)
+          cat > /tmp/photos.py <<'PY'
+          import sys, re, json, os, subprocess
+          url = sys.argv[1]
+          m = re.search(r"/(?:video|photo)/(\d+)", url)
+          if not m: sys.exit(2)
+          vid = m.group(1)
+          UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+          page_url = re.sub(r"/video/", "/photo/", url.split("?")[0])
+
+          def via_urllib():
+              import urllib.request
+              op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+              op.addheaders = [("User-Agent", UA), ("Accept-Language", "en-US,en;q=0.9")]
+              html = op.open(page_url, timeout=20).read().decode("utf-8", "ignore")
+              return html, lambda u: op.open(urllib.request.Request(u, headers={"Referer": "https://www.tiktok.com/"}), timeout=30).read()
+
+          def via_cffi():
+              try:
+                  from curl_cffi import requests as cr
+              except ImportError:
+                  subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "curl_cffi"], check=False)
+                  from curl_cffi import requests as cr
+              s = cr.Session(impersonate="chrome")
+              html = s.get(page_url, timeout=20).text
+              return html, lambda u: s.get(u, headers={"Referer": "https://www.tiktok.com/"}, timeout=30).content
+
+          def item_of(html):
+              mm = re.search(r'<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)</script>', html, re.S)
+              if not mm: return None
+              d = json.loads(mm.group(1)).get("__DEFAULT_SCOPE__", {})
+              return ((d.get("webapp.video-detail") or {}).get("itemInfo") or {}).get("itemStruct")
+
+          item, get = None, None
+          for fn in (via_urllib, via_cffi):
+              try:
+                  html, get = fn()
+                  item = item_of(html)
+                  if item: break
+              except Exception as e:
+                  print("photos:", fn.__name__, e)
+          if not item: sys.exit(3)
+          images = (item.get("imagePost") or {}).get("images") or []
+          if not images: sys.exit(2)  # לא פוסט תמונות – ממשיכים להורדת וידאו רגילה
+          author = (item.get("author") or {}).get("uniqueId") or "photo"
+          ok = 0
+          for n, im in enumerate(images, 1):
+              urls = ((im.get("imageURL") or {}).get("urlList")) or []
+              urls = sorted(urls, key=lambda u: 0 if re.search(r"\.jpe?g", u) else 1)
+              for u in urls:
+                  try:
+                      b = get(u)
+                      if len(b) < 500: continue
+                      ext = "png" if b[:4] == b"\x89PNG" else "webp" if b[8:12] == b"WEBP" else "jpg"
+                      open(f"out/{author}_{vid}_{n:02d}.{ext}", "wb").write(b); ok += 1; break
+                  except Exception as e:
+                      print("image", n, e)
+          music = (item.get("music") or {}).get("playUrl")
+          if music:
+              try:
+                  b = get(music)
+                  if len(b) > 1000: open(f"out/{author}_{vid}_audio.mp3", "wb").write(b)
+              except Exception as e:
+                  print("audio", e)
+          print(f"photo post {vid}: {ok}/{len(images)} images")
+          sys.exit(0 if ok else 3)
+          PY
+
+          # אפשר כמה קישורים מופרדים ברווח – מורידים 4 במקביל
+          printf '%s\n' $URL | grep -E '^https?://' > urls.txt || true
+          echo "videos: $(wc -l < urls.txt)"
+          dl() {
+            if [[ "$1" == *tiktok.com* ]]; then
+              python3 /tmp/photos.py "$1"; rc=$?
+              [ $rc -eq 0 ] && return 0
+            fi
+            yt-dlp --no-playlist --no-progress -S "vcodec:h264,res,br" -f "b[vcodec^=h264]/b[vcodec^=avc]/bv*[vcodec^=h264]+ba/b" \
+              --merge-output-format mp4 -o "out/%(uploader_id)s_%(id)s.%(ext)s" \
+              --print-to-file "after_move:%(vcodec)s|%(filepath)s" /tmp/codecs.txt "$1" && return 0
+            [[ "$1" == *tiktok.com* ]] && python3 /tmp/fallback.py "$1" && return 0
+            echo "::warning::failed: $1"
+          }
+          export -f dl
+          xargs -P 4 -I{} bash -c 'dl "$@"' _ {} < urls.txt || true
+
+          # בודקים את הפורמט לפי מה ש־yt-dlp הוריד – בלי להתקין כלום.
+          # רק אם הפורמט לא H.264 מתקינים ffmpeg (גרסה מוכנה) וממירים.
+          touch /tmp/codecs.txt; cat /tmp/codecs.txt
+          ensure_ffmpeg() {
+            command -v ffmpeg >/dev/null && return 0
+            mkdir -p /tmp/ff && curl -fsSL --retry 2 https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz \
+              | tar -xJ -C /tmp/ff --strip-components=1 && export PATH="/tmp/ff/bin:$PATH" && return 0
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          }
+          while IFS='|' read -r codec f; do
+            [ -f "$f" ] || continue
+            case "$codec" in h264*|avc*) echo "ok h264: $f"; continue;; none|"") echo "audio/other: $f"; continue;; esac
+            echo "converting ($codec): $f"
+            ensure_ffmpeg
+            o="${f%.*}.h264.mp4"
+            if ffmpeg -y -v error -i "$f" -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "$o"; then
+              rm -f "$f"; mv "$o" "${f%.*}.mp4"; echo "converted"
+            else
+              rm -f "$o"; echo "::warning::conversion failed: $f"
+            fi
+          done < /tmp/codecs.txt
+          ls -la out
+          [ -n "$(ls -A out)" ] || { echo "nothing downloaded"; exit 1; }
+
+      # ---------------- אריזה ופרסום (כמו בתוסף ההורדות שעובד) ----------------
+      - name: Pack ZIP
+        if: inputs.mode == 'download'
+        env:
+          NAMES: ${{ inputs.names }}
+        run: |
+          python3 - <<'PY'
+          import os, re, json, zipfile, unicodedata
+          try:
+              names = json.loads(os.environ.get("NAMES") or "{}")
+          except Exception:
+              names = {}
+          def clean(t, max_len=70):
+              t = re.sub(r"#[^\s#]+|@[\w.\-]+", " ", str(t or ""))
+              t = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', " ", t)
+              t = "".join(ch for ch in t if unicodedata.category(ch) not in ("So", "Cs", "Cf", "Co", "Sk") and ch not in "\ufe0f\u200d")
+              t = re.sub(r"\s+", " ", t).strip()[:max_len].strip().rstrip(". ")
+              return "" if re.fullmatch(r"(?i)con|prn|aux|nul|com\d|lpt\d", t) else t
+          files = sorted(f for f in os.listdir("out") if os.path.isfile("out/" + f))
+          used = set()
+          with zipfile.ZipFile("download.zip", "w", zipfile.ZIP_STORED) as z:
+              for f in files:
+                  ext = os.path.splitext(f)[1].lower()
+                  key = next((k for k in names if k and k in f), None)
+                  base = clean(names[key]) if key else ""
+                  if not base: base = os.path.splitext(f)[0]
+                  num = re.search(r"_(\d{1,3})\.\w+$", f)
+                  suffix = f" - {int(num.group(1))}" if num else (" - סאונד" if re.search(r"_audio\.\w+$", f) else "")
+                  name, k = base + suffix + ext, 1
+                  while name.lower() in used:
+                      k += 1; name = f"{base}{suffix} ({k}){ext}"
+                  used.add(name.lower())
+                  z.write("out/" + f, name)
+                  print("packed:", name)
+          print("zip size:", os.path.getsize("download.zip"))
+          PY
+
+      - name: Publish release
+        if: inputs.mode == 'download'
+        continue-on-error: true   # גם אם GitHub מחזיר שגיאה – ההורדה ממשיכה דרך הגיבוי
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ttdl-${{ github.run_id }}
+        run: |
+          ok=0
+          for i in 1 2 3 4; do
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "$TAG" download.zip -R "$GITHUB_REPOSITORY" --clobber && ok=1 && break
+            else
+              gh release create "$TAG" download.zip -R "$GITHUB_REPOSITORY" \
+                --target "$GITHUB_SHA" --title "הורדה ${{ github.run_id }}" --notes "${{ inputs.request_id }}" && ok=1 && break
+            fi
+            echo "ניסיון $i נכשל – מנסה שוב"; sleep $((i * 5))
+          done
+          if [ "$ok" != 1 ]; then echo "::warning::הפרסום נכשל – התוסף ימשוך את הקובץ מהגיבוי"; fi
+          # ניקוי הורדות ישנות (מעל יום)
+          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
+            -q '.[] | select(.tagName | startswith("ttdl-")) | select((now - (.createdAt | fromdateiso8601)) > 86400) | .tagName' \
+            | xargs -r -n1 gh release delete -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result
+          path: out/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  # ---------------- הורדה לילית: סרטונים חדשים מהיוצרים שעוקבים אחריהם ----------------
+  nightly:
+    if: github.event_name == 'schedule' && vars.NIGHTLY_ON == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FOLLOWS: ${{ vars.FOLLOWS }}
+    steps:
+      - name: Install
+        run: |
+          sudo curl -fsSL --retry 2 -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux && sudo chmod +x /usr/local/bin/yt-dlp \
+            || pip install -q -U "yt-dlp[default,curl-cffi]"
+          yt-dlp --version
+
+      - name: Find new videos
+        run: |
+          mkdir -p out prev
+          # מה כבר ירד בלילות קודמים
+          last=$(gh release list -R "$GITHUB_REPOSITORY" --limit 50 --json tagName -q '.[].tagName' | grep '^nightly-' | sort -r | head -1 || true)
+          [ -n "$last" ] && gh release download "$last" -R "$GITHUB_REPOSITORY" -p manifest.json -D prev || true
+          python3 - <<'PY'
+          import os, json, re, subprocess, time
+          try:
+              follows = [u.strip().lstrip("@") for u in json.loads(os.environ.get("FOLLOWS") or "[]") if u and str(u).strip()][:40]
+          except Exception:
+              follows = []
+          seen = set()
+          if os.path.exists("prev/manifest.json"):
+              try: seen = set(json.load(open("prev/manifest.json")).get("seen", []))
+              except Exception: pass
+          week = time.time() - 7 * 86400
+          todo = []
+          for u in follows:
+              r = subprocess.run(["yt-dlp", "--flat-playlist", "--playlist-end", "12", "--print", "%(id)s\t%(url)s",
+                                  f"https://www.tiktok.com/@{u}"], capture_output=True, text=True, timeout=180)
+              for line in r.stdout.splitlines():
+                  vid, _, url = line.partition("\t")
+                  if not vid.isdigit() or vid in seen: continue
+                  if (int(vid) >> 32) < week: continue
+                  todo.append({"id": vid, "user": u, "link": url if url.startswith("http") else f"https://www.tiktok.com/@{u}/video/{vid}"})
+              print(f"@{u}: {len(r.stdout.splitlines())} checked")
+          todo = todo[:30]
+          json.dump({"todo": todo, "seen": sorted(seen | {t["id"] for t in todo})[-3000:]}, open("plan.json", "w"))
+          print("new videos:", len(todo))
+          PY
+
+      - name: Download
+        run: |
+          python3 -c "import json; [print(t['link']) for t in json.load(open('plan.json'))['todo']]" > urls.txt
+          echo "to download: $(wc -l < urls.txt)"
+          [ -s urls.txt ] || exit 0
+          dl() {
+            yt-dlp --no-playlist --no-progress -S "vcodec:h264,res,br" -f "b[vcodec^=h264]/b[vcodec^=avc]/bv*[vcodec^=h264]+ba/b" \
+              --merge-output-format mp4 -o "out/%(uploader_id)s_%(id)s.%(ext)s" \
+              --print-to-file "after_move:%(id)s\t%(vcodec)s\t%(filepath)s\t%(title)s" /tmp/done.txt "$1" \
+              || echo "::warning::failed: $1"
+          }
+          export -f dl
+          xargs -P 4 -I{} bash -c 'dl "$@"' _ {} < urls.txt || true
+          touch /tmp/done.txt
+          while IFS=$'\t' read -r id codec f title; do
+            [ -f "$f" ] || continue
+            case "$codec" in h264*|avc*|none|"") continue;; esac
+            command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null; }
+            ffmpeg -y -v error -i "$f" -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "$f.tmp.mp4" && mv "$f.tmp.mp4" "$f"
+          done < /tmp/done.txt
+
+      - name: Pack and publish
+        run: |
+          python3 - <<'PY'
+          import os, json, re, zipfile, unicodedata, datetime
+          plan = json.load(open("plan.json"))
+          titles = {}
+          if os.path.exists("/tmp/done.txt"):
+              for line in open("/tmp/done.txt", encoding="utf-8", errors="ignore"):
+                  p = line.rstrip("\n").split("\t")
+                  if len(p) >= 4: titles[p[0]] = p[3]
+          def clean(t):
+              t = re.sub(r"#[^\s#]+|@[\w.\-]+", " ", str(t or ""))
+              t = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', " ", t)
+              t = "".join(ch for ch in t if unicodedata.category(ch) not in ("So", "Cs", "Cf", "Co", "Sk"))
+              return re.sub(r"\s+", " ", t).strip()[:70].strip().rstrip(". ")
+          files = sorted(f for f in os.listdir("out")) if os.path.isdir("out") else []
+          items, used = [], set()
+          if files:
+              with zipfile.ZipFile("nightly.zip", "w", zipfile.ZIP_STORED) as z:
+                  for f in files:
+                      vid = next((t["id"] for t in plan["todo"] if t["id"] in f), None)
+                      t = next((t for t in plan["todo"] if t["id"] == vid), {})
+                      base = clean(titles.get(vid)) or f"{t.get('user', 'video')}_{vid}"
+                      name, k = f"{base}{os.path.splitext(f)[1]}", 1
+                      while name.lower() in used:
+                          k += 1; name = f"{base} ({k}){os.path.splitext(f)[1]}"
+                      used.add(name.lower()); z.write("out/" + f, name)
+                      items.append({"id": vid, "user": t.get("user"), "link": t.get("link"), "title": titles.get(vid, ""), "file": name})
+          today = datetime.datetime.utcnow().strftime("%Y%m%d")
+          json.dump({"date": today, "count": len(items), "items": items, "seen": plan["seen"]},
+                    open("manifest.json", "w"), ensure_ascii=False)
+          print("packed", len(items))
+          PY
+          TAG="nightly-$(date -u +%Y%m%d)-${{ github.run_id }}"
+          assets="manifest.json"; [ -f nightly.zip ] && assets="manifest.json nightly.zip"
+          for i in 1 2 3 4; do
+            gh release create "$TAG" $assets -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "הורדה לילית $(date -u +%d/%m)" --notes "$(python3 -c "import json;print(json.load(open('manifest.json'))['count'])") סרטונים חדשים" && break
+            sleep $((i * 5))
+          done
+          # שומרים רק 7 לילות אחרונים
+          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName -q '.[].tagName' | grep '^nightly-' | sort -r | tail -n +8 \
+            | xargs -r -n1 gh release delete -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
