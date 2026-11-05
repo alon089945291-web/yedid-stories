@@ -30,6 +30,23 @@ jobs:
           python -m pip install playwright
           python -m playwright install --with-deps chromium
 
+      - name: פענוח עוגיות (אם נשלחו)
+        env:
+          COOKIES_B64: ${{ secrets.YT_COOKIES_B64 }}
+        run: |
+          python - <<'PY'
+          import base64, gzip, os, sys
+          b64 = os.environ.get("COOKIES_B64", "")
+          if not b64:
+              sys.exit(0)
+          raw = base64.b64decode(b64)
+          if raw[:2] == b"\x1f\x8b":
+              raw = gzip.decompress(raw)
+          with open("cookies.txt", "wb") as f:
+              f.write(raw)
+          print("cookies.txt נכתב,", len(raw), "בייט")
+          PY
+
       - name: חיפוש
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
