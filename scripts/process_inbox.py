@@ -163,20 +163,38 @@ def run_download():
 
     # תמיד אורזים ל-ZIP בשם בטוח (אותיות ומספרים בלבד). כך אין בעיה עם שמות
     # בעברית או עם תווים כמו [ ] ( ) שגורמים ל-gh להיכשל, וההורדה זהה תמיד.
-    zip_path = Path(f"videos-{RUN_ID}.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as z:
-        for f in files:
-            z.write(f, arcname=f.name)
-    # שם התצוגה: כותרת הסרטון (בלי ה-id שבסוף). כמה סרטונים: הראשון + "ועוד N"
-    titles = [clean_label(re.sub(r"\s*\[[^\]]*\]$", "", f.stem)) for f in files]
-    titles = [t for t in titles if t]
-    if not titles:
-        label = f"videos-{RUN_ID}.zip"
-    elif len(titles) == 1:
-        label = f"{titles[0]}.zip"
-    else:
-        label = f"{titles[0]} ועוד {len(titles) - 1}.zip"
-    upload = [(zip_path, label)]
+    # GitHub לא מאפשר קובץ גדול מ-2GB ב-Release, ולכן מחלקים לכמה ZIP-ים (עד ~1.8GB כל אחד).
+    LIMIT = int(1.8 * 1024 ** 3)
+    groups, current, size = [], [], 0
+    for f in files:
+        fsize = f.stat().st_size
+        if current and size + fsize > LIMIT:
+            groups.append(current)
+            current, size = [], 0
+        current.append(f)
+        size += fsize
+    if current:
+        groups.append(current)
+
+    upload = []
+    for i, group in enumerate(groups, 1):
+        suffix = f"-part{i}" if len(groups) > 1 else ""
+        zip_path = Path(f"videos-{RUN_ID}{suffix}.zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
+            for f in group:
+                z.write(f, arcname=f.name)
+        # שם התצוגה: כותרת הסרטון (בלי ה-id שבסוף). כמה סרטונים: הראשון + "ועוד N"
+        titles = [clean_label(re.sub(r"\s*\[[^\]]*\]$", "", f.stem)) for f in group]
+        titles = [t for t in titles if t]
+        if not titles:
+            label = f"videos-{RUN_ID}{suffix}.zip"
+        elif len(titles) == 1:
+            label = f"{titles[0]}.zip"
+        else:
+            label = f"{titles[0]} ועוד {len(titles) - 1}.zip"
+        if len(groups) > 1:
+            label = f"חלק {i} - {label}"
+        upload.append((zip_path, label))
 
     gh_release(f"dl-{RUN_ID}", f"הורדה #{RUN_ID}", upload)
     print(f"הועלו {len(upload)} קבצים")
