@@ -412,7 +412,50 @@ jobs:
                   if item: break
               except Exception as e:
                   print("photos:", fn.__name__, e)
-          if not item: sys.exit(3)
+          def via_tikwm():
+              # גיבוי: אם העמוד של טיקטוק חסום לשרת, מבקשים את רשימת התמונות מ-tikwm
+              import urllib.request, urllib.parse, time
+              api = os.environ.get("TIKWM", "https://www.tikwm.com")
+              H = {"User-Agent": "Mozilla/5.0", "Origin": api, "Referer": api + "/"}
+              d = {}
+              for i in range(4):
+                  req = urllib.request.Request(api + "/api/", data=urllib.parse.urlencode({"url": page_url, "hd": 1}).encode(), headers=H)
+                  j = json.load(urllib.request.urlopen(req, timeout=30))
+                  if j.get("code") == 0:
+                      d = j.get("data") or {}
+                      break
+                  time.sleep(1.5 * (i + 1))
+              imgs = d.get("images") or []
+              if not imgs:
+                  return False
+              absu = lambda u: u if u.startswith("http") else api + u
+              author = (d.get("author") or {}).get("unique_id") or "photo"
+              got = 0
+              for n, u in enumerate(imgs, 1):
+                  try:
+                      b = urllib.request.urlopen(urllib.request.Request(absu(u), headers=H), timeout=30).read()
+                      if len(b) < 500: continue
+                      ext = "png" if b[:4] == b"\x89PNG" else "webp" if b[8:12] == b"WEBP" else "jpg"
+                      open(f"out/{author}_{vid}_{n:02d}.{ext}", "wb").write(b); got += 1
+                  except Exception as e:
+                      print("tikwm image", n, e)
+              music = d.get("music") or (d.get("music_info") or {}).get("play")
+              if music and got:
+                  try:
+                      b = urllib.request.urlopen(urllib.request.Request(absu(music), headers=H), timeout=30).read()
+                      if len(b) > 1000: open(f"out/{author}_{vid}_audio.mp3", "wb").write(b)
+                  except Exception as e:
+                      print("tikwm audio", e)
+              print(f"photo post {vid} (tikwm): {got}/{len(imgs)} images")
+              return got > 0
+
+          if not item:
+              try:
+                  if via_tikwm():
+                      sys.exit(0)
+              except Exception as e:
+                  print("photos: tikwm", e)
+              sys.exit(3)
           images = (item.get("imagePost") or {}).get("images") or []
           if not images: sys.exit(2)  # לא פוסט תמונות – ממשיכים להורדת וידאו רגילה
           author = (item.get("author") or {}).get("uniqueId") or "photo"
@@ -446,6 +489,8 @@ jobs:
             if [[ "$1" == *tiktok.com* ]]; then
               python3 /tmp/photos.py "$1"; rc=$?
               [ $rc -eq 0 ] && return 0
+              # פוסט תמונות שלא הצלחנו להביא: לא מורידים "וידאו" שהוא בעצם סאונד בלבד
+              if [[ "$1" == */photo/* ]]; then echo "::warning::לא ניתן להוריד את התמונות של: $1"; return 1; fi
             fi
             yt-dlp --no-playlist --no-progress -S "vcodec:h264,res,br" -f "b[vcodec^=h264]/b[vcodec^=avc]/bv*[vcodec^=h264]+ba/b" \
               --merge-output-format mp4 -o "out/%(uploader_id)s_%(id)s.%(ext)s" \
