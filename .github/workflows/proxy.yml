@@ -581,8 +581,10 @@ jobs:
           done
           if [ "$ok" != 1 ]; then echo "::warning::הפרסום נכשל – התוסף ימשוך את הקובץ מהגיבוי"; fi
           # ניקוי הורדות ישנות (מעל יום)
-          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
-            -q '.[] | select(.tagName | startswith("ttdl-")) | select((now - (.createdAt | fromdateiso8601)) > 86400) | .tagName' \
+          # שימו לב: createdAt של Release הוא תאריך ההעלאה האחרונה של קוד במאגר ולא זמן היצירה,
+          # ולכן משתמשים ב-publishedAt, ואף פעם לא מוחקים את ההורדה הנוכחית.
+          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,publishedAt \
+            -q '.[] | select(.tagName | startswith("ttdl-")) | select(.tagName != "'"$TAG"'") | select((now - (.publishedAt | fromdateiso8601)) > 86400) | .tagName' \
             | xargs -r -n1 gh release delete -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
 
       - name: Upload result
