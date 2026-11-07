@@ -580,11 +580,35 @@ jobs:
             echo "ניסיון $i נכשל – מנסה שוב"; sleep $((i * 5))
           done
           if [ "$ok" != 1 ]; then echo "::warning::הפרסום נכשל – התוסף ימשוך את הקובץ מהגיבוי"; fi
-          # ניקוי הורדות ישנות (מעל יום)
-          # שימו לב: createdAt של Release הוא תאריך ההעלאה האחרונה של קוד במאגר ולא זמן היצירה,
-          # ולכן משתמשים ב-publishedAt, ואף פעם לא מוחקים את ההורדה הנוכחית.
-          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,publishedAt \
-            -q '.[] | select(.tagName | startswith("ttdl-")) | select(.tagName != "'"$TAG"'") | select((now - (.publishedAt | fromdateiso8601)) > 86400) | .tagName' \
+          # ניקוי: משאירים את 30 ההורדות האחרונות של הטיקטוק (לפי מספר ההרצה, שתמיד עולה),
+          # בלי להסתמך על תאריכים של GitHub, ובלי לגעת בהורדה הנוכחית או בהורדות של היוטיוב.
+          gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName -q '.[].tagName' \
+            | grep '^ttdl-' | grep -vx "$TAG" | sort -t- -k2 -n -r | tail -n +30 \
+            | xargs -r -n1 gh release delete -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+
+      # ---------------- פרסום תוצאות חיפוש כ-Release (כמו בהורדות – דרך שסינונים כמו NetFree לא חוסמים) ----------------
+      - name: Publish search results
+        if: inputs.mode != 'download'
+        continue-on-error: true   # גם אם נכשל – התוסף ימשוך את התוצאות מהגיבוי
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ttsrch-${{ github.run_id }}
+        run: |
+          python3 -c "import zipfile; z = zipfile.ZipFile('search.zip', 'w', zipfile.ZIP_STORED); z.write('out/result.json', 'result.json'); z.close()"
+          ok=0
+          for i in 1 2 3 4; do
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "$TAG" search.zip -R "$GITHUB_REPOSITORY" --clobber && ok=1 && break
+            else
+              gh release create "$TAG" search.zip -R "$GITHUB_REPOSITORY" \
+                --target "$GITHUB_SHA" --title "חיפוש ${{ github.run_id }}" --notes "${{ inputs.request_id }}" && ok=1 && break
+            fi
+            echo "ניסיון $i נכשל – מנסה שוב"; sleep $((i * 5))
+          done
+          if [ "$ok" != 1 ]; then echo "::warning::הפרסום נכשל – התוסף ימשוך את התוצאות מהגיבוי"; fi
+          # משאירים את 30 החיפושים האחרונים (לפי מספר ההרצה), בלי תלות בתאריכים
+          gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName -q '.[].tagName' \
+            | grep '^ttsrch-' | grep -vx "$TAG" | sort -t- -k2 -n -r | tail -n +30 \
             | xargs -r -n1 gh release delete -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
 
       - name: Upload result
