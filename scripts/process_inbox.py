@@ -153,9 +153,30 @@ def run_download():
             "key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192",
         }]
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        for t in targets:
-            ydl.download([t])
+    # יוטיוב לפעמים מחזירה 403 ללקוח אחד ומאפשרת בלקוח אחר - לכן מנסים כמה דרכים לפי הסדר.
+    ATTEMPTS = [
+        ("רגיל", {}),
+        ("tv + web_safari", {"extractor_args": {"youtube": {"player_client": ["tv", "web_safari"]}}}),
+        ("mweb", {"extractor_args": {"youtube": {"player_client": ["mweb"]}}}),
+        ("android_vr", {"extractor_args": {"youtube": {"player_client": ["android_vr"]}}}),
+        ("ios", {"extractor_args": {"youtube": {"player_client": ["ios"]}}}),
+    ]
+    remaining = list(targets)
+    for name, extra in ATTEMPTS:
+        if not remaining:
+            break
+        print(f"ניסיון: {name} ({len(remaining)} קישורים)")
+        o = {**opts, **extra, "no_warnings": False}
+        failed = []
+        with yt_dlp.YoutubeDL(o) as ydl:
+            for t in remaining:
+                try:
+                    code = ydl.download([t])
+                except Exception as e:
+                    print("שגיאה:", str(e)[:200]); code = 1
+                if code:
+                    failed.append(t)
+        remaining = failed
 
     files = sorted(p for p in DOWNLOAD_DIR.iterdir() if p.is_file())
     if not files:
