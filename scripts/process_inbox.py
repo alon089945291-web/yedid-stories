@@ -55,14 +55,20 @@ def clean_label(text):
     return text[:100]
 
 
-def gh_release(tag, title, files):
+def gh_release(tag, title, files, notes=None):
     """יוצר Release (או משתמש בקיים) ומעלה אליו קבצים.
 
     files: רשימה של נתיבים, או של זוגות (נתיב, שם_תצוגה).
     הקובץ עצמו נשמר בשם בטוח, והשם היפה מופיע כ"תווית" (label) שהתוסף מציג.
     """
+    if notes is not None:
+        # התיאור נשלח דרך קובץ, כדי שגודל או תווים מיוחדים לא ישברו את הפקודה
+        Path("release_notes.txt").write_text(notes, encoding="utf-8")
+        notes_args = ["--notes-file", "release_notes.txt"]
+    else:
+        notes_args = ["--notes", "נוצר אוטומטית"]
     subprocess.run(
-        ["gh", "release", "create", tag, "--title", title, "--notes", "נוצר אוטומטית"],
+        ["gh", "release", "create", tag, "--title", title, *notes_args],
         check=False,
     )
     args = []
@@ -126,7 +132,11 @@ def run_list():
         "search": is_search,
     }
     Path("list.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    gh_release(f"list-{RUN_ID}", f"רשימה #{RUN_ID}", [Path("list.json")])
+    # הרשימה נשמרת גם בתיאור השחרור (כך התוסף קורא אותה בלי להוריד קובץ, וזה עוקף חסימות של NetFree).
+    # GitHub מגביל תיאור ל-125,000 תווים, ולכן אם הרשימה ארוכה מדי רק הקובץ נשאר.
+    compact = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    notes = "LISTJSON:" + compact if len(compact) < 100000 else None
+    gh_release(f"list-{RUN_ID}", f"רשימה #{RUN_ID}", [Path("list.json")], notes=notes)
     print(f"נמצאו {len(videos)} סרטונים")
 
 
