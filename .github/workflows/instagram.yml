@@ -11,8 +11,11 @@ on:
         description: "מילה / #האשטג לחיפוש"
         default: ""
       url:
-        description: "קישור לפוסט/רילס להורדה"
+        description: "קישור/ים להורדה - כמה קישורים מופרדים בירידת שורה"
         default: ""
+      page:
+        description: "מספר עמוד חיפוש (לטעינת עוד תוצאות)"
+        default: "1"
       request_id:
         default: ""
 
@@ -35,6 +38,7 @@ jobs:
         env:
           Q: ${{ inputs.query }}
           MODE: ${{ inputs.mode }}
+          PAGE: ${{ inputs.page }}
         run: |
           mkdir -p out
           python3 - <<'PY'
@@ -99,6 +103,7 @@ jobs:
                           "cover": n.get("display_url") or n.get("thumbnail_src") or "",
                           "link": f"https://www.instagram.com/p/{code}/",
                           "kind": "video" if n.get("is_video") else "image",
+                          "date": n.get("taken_at_timestamp"),
                       })
                   return out
 
@@ -131,18 +136,25 @@ jobs:
           base = q.lstrip("#@").strip()
           terms = [t for t in (q, base, f'"{base}"', f"#{base}" if not q.startswith("#") else "") if t]
 
+          # PAGE>1 = "טען עוד": מזיזים את ההיסט קדימה כדי לבקש תוצאות חדשות שלא נראו בעמוד הקודם.
+          try:
+              PAGE = max(1, int(os.environ.get("PAGE", "1") or "1"))
+          except ValueError:
+              PAGE = 1
+          shift = (PAGE - 1) * 200
+
           def bing(term, first):
-              return get("https://www.bing.com/search?" + urllib.parse.urlencode({"q": term, "count": 50, "first": first}))
+              return get("https://www.bing.com/search?" + urllib.parse.urlencode({"q": term, "count": 50, "first": first + shift}))
           def ddg(term, _):
               return get("https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": term}))
           def brave(term, off):
-              return get("https://search.brave.com/search?" + urllib.parse.urlencode({"q": term, "offset": off}))
+              return get("https://search.brave.com/search?" + urllib.parse.urlencode({"q": term, "offset": off + (PAGE - 1) * 4}))
 
           pages = {bing: (1, 51, 101, 151), ddg: (0,), brave: (0, 1, 2, 3)}
           alive = {(fn, f"site:instagram.com {t}") for fn in pages for t in terms}
           dead = set()
-          # אם ה-API הישיר (profile_items) או רשימת yt-dlp (found) כבר הביאו מספיק - לא צריך מנועי חיפוש
-          skip_search_engines = MODE == "user" and (len(profile_items) > 0 or len(found) >= 10)
+          # אם ה-API הישיר (profile_items) או רשימת yt-dlp (found) כבר הביאו מספיק - לא צריך מנועי חיפוש (רק בעמוד הראשון)
+          skip_search_engines = MODE == "user" and PAGE == 1 and (len(profile_items) > 0 or len(found) >= 10)
           for wave in range(0 if skip_search_engines else 4):
               if len(found) >= 60 or time.time() - START > 55:
                   break
@@ -200,6 +212,7 @@ jobs:
                           "cover": info.get("thumbnail") or "",
                           "link": info.get("webpage_url") or url,
                           "kind": "video" if (has_video or is_reel) else "image",
+                          "date": info.get("timestamp") or info.get("release_timestamp"),
                       }
                   except Exception as e:
                       log.append(f"meta {url}: {str(e)[:100]}")
@@ -234,9 +247,12 @@ jobs:
           import os, re, sys, html, urllib.request
           from pathlib import Path
 
-          url = os.environ.get("URL", "").strip()
-          if not url:
+          raw_url = os.environ.get("URL", "").strip()
+          if not raw_url:
               print("לא התקבל קישור"); sys.exit(1)
+          # אפשר כמה קישורים בבת אחת (הורדה מרובה/בחירה) - מופרדים בירידת שורה או ב-|
+          urls = [u.strip() for u in re.split(r"[\n|]+", raw_url) if u.strip()]
+          print(f"התקבלו {len(urls)} קישורים להורדה")
 
           UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 
@@ -280,47 +296,62 @@ jobs:
               raise RuntimeError(str(last_err) if last_err else "דף השיבוץ לא הכיל מדיה (ייתכן שהפוסט פרטי)")
 
           Path("downloads").mkdir(exist_ok=True)
-          ok = False
-          try:
-              media_items = via_embed(url)
-              n = 0
-              for kind, media_url in media_items:
-                  try:
-                      data = get(media_url, binary=True)
-                  except Exception as e:
-                      print(f"פריט {n+1} נכשל: {e}"); continue
-                  ext = ".mp4" if kind == "video" else ".jpg"
-                  suffix = f"_{n+1}" if len(media_items) > 1 else ""
-                  Path(f"downloads/instagram_{kind}{suffix}{ext}").write_bytes(data)
-                  n += 1
-              if n:
-                  print(f"ירדו {n} פריטים דרך דף השיבוץ")
-                  ok = True
-              else:
-                  print("דרך השיבוץ מצאה מדיה אבל לא הצליחה להוריד כלום")
-          except Exception as e:
-              print(f"דרך השיבוץ נכשלה: {e}")
 
-          # ---- דרך 2 (גיבוי): yt-dlp הרגיל, כמו ביוטיוב ----
-          if not ok:
+          def download_one(u, tag):
+              """מוריד פוסט אחד. tag הוא קידומת ייחודית לשם הקובץ (כדי שכמה פוסטים לא ידרסו אחד את השני)."""
+              ok = False
               try:
-                  import yt_dlp
-                  opts = {
-                      "quiet": True, "no_warnings": False, "ignoreerrors": True, "noprogress": True,
-                      "format": "bestvideo*+bestaudio/best",
-                      "merge_output_format": "mp4",
-                      "outtmpl": "downloads/%(uploader).40s - %(id)s.%(ext)s",
-                  }
-                  with yt_dlp.YoutubeDL(opts) as ydl:
-                      ydl.download([url])
+                  media_items = via_embed(u)
+                  n = 0
+                  for kind, media_url in media_items:
+                      try:
+                          data = get(media_url, binary=True)
+                      except Exception as e:
+                          print(f"  פריט {n+1} נכשל: {e}"); continue
+                      ext = ".mp4" if kind == "video" else ".jpg"
+                      suffix = f"_{n+1}" if len(media_items) > 1 else ""
+                      Path(f"downloads/{tag}_{kind}{suffix}{ext}").write_bytes(data)
+                      n += 1
+                  if n:
+                      print(f"  ירדו {n} פריטים דרך דף השיבוץ")
+                      ok = True
+                  else:
+                      print("  דרך השיבוץ מצאה מדיה אבל לא הצליחה להוריד כלום")
               except Exception as e:
-                  print(f"גם yt-dlp נכשל: {e}")
+                  print(f"  דרך השיבוץ נכשלה: {e}")
+
+              # ---- דרך 2 (גיבוי): yt-dlp הרגיל, כמו ביוטיוב ----
+              if not ok:
+                  try:
+                      import yt_dlp
+                      opts = {
+                          "quiet": True, "no_warnings": False, "ignoreerrors": True, "noprogress": True,
+                          "format": "bestvideo*+bestaudio/best",
+                          "merge_output_format": "mp4",
+                          "outtmpl": f"downloads/{tag}_%(uploader).30s - %(id)s.%(ext)s",
+                      }
+                      with yt_dlp.YoutubeDL(opts) as ydl:
+                          ydl.download([u])
+                      ok = True
+                  except Exception as e:
+                      print(f"  גם yt-dlp נכשל: {e}")
+              return ok
+
+          before = 0
+          success = 0
+          for i, u in enumerate(urls, 1):
+              print(f"[{i}/{len(urls)}] {u}")
+              before_count = len(list(Path("downloads").iterdir()))
+              download_one(u, f"post{i}")
+              after_count = len(list(Path("downloads").iterdir()))
+              if after_count > before_count:
+                  success += 1
 
           files = sorted(p for p in Path("downloads").iterdir() if p.is_file())
           if not files:
               print("לא ירד שום קובץ (ייתכן שהפוסט דורש התחברות לחשבון, או שהוא פרטי)")
               sys.exit(1)
-          print(f"ירדו {len(files)} קבצים")
+          print(f"ירדו {len(files)} קבצים מתוך {success}/{len(urls)} פוסטים")
           PY
 
       # ---------------- פרסום תוצאות חיפוש ----------------
