@@ -64,18 +64,20 @@ jobs:
                   found.setdefault(vid, True)
 
           base = q.lstrip("#").strip()
-          terms = [t for t in (q, base, f'"{base}"') if t]
+          terms = [t for t in (q, base, f'"{base}"', f"#{base}" if not q.startswith("#") else "") if t]
 
           def bing(term, first):
               return get("https://www.bing.com/search?" + urllib.parse.urlencode({"q": term, "count": 50, "first": first}))
+          def ddg(term, _):
+              return get("https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": term}))
           def brave(term, off):
               return get("https://search.brave.com/search?" + urllib.parse.urlencode({"q": term, "offset": off}))
 
-          pages = {bing: (1, 51, 101), brave: (0, 1, 2)}
+          pages = {bing: (1, 51, 101, 151), ddg: (0,), brave: (0, 1, 2, 3)}
           alive = {(fn, f"site:instagram.com {t}") for fn in pages for t in terms}
           dead = set()
-          for wave in range(3):
-              if len(found) >= 24 or time.time() - START > 40:
+          for wave in range(4):
+              if len(found) >= 60 or time.time() - START > 55:
                   break
               jobs = [(fn, term, pages[fn][wave]) for fn, term in alive if wave < len(pages[fn]) and fn.__name__ not in dead]
               if not jobs:
@@ -101,10 +103,12 @@ jobs:
                       alive.discard((fn, term))
               print(f"wave {wave}: {len(jobs)} requests, {len(found)} links, {time.time() - START:.1f}s")
 
-          links = ["https://www.instagram.com/p/" + vid + "/" for vid in list(found.keys())[:20]]
+          links = ["https://www.instagram.com/p/" + vid + "/" for vid in list(found.keys())[:40]]
           print(f"search engines: {len(links)} links found")
 
-          # ---- שלב 2: לכל קישור שנמצא, שולפים כותרת/תמונה דרך yt-dlp (בלי הורדה) ----
+          # ---- שלב 2: לכל קישור שנמצא, מנסים לשלוף כותרת/תמונה דרך yt-dlp (בלי הורדה) ----
+          # גם קישור שנכשל בשליפת הפרטים (למשל דורש התחברות) עדיין נכנס לרשימה, בלי תמונה/כותרת –
+          # כך לא מפסידים תוצאות, רק חלק מהן יוצגו עם פחות פרטים.
           items = []
           if links:
               import yt_dlp
@@ -112,13 +116,15 @@ jobs:
                       "socket_timeout": 12, "retries": 1, "extractor_retries": 0}
 
               def meta(url):
+                  vid = re.search(r"/(?:p|reel|reels)/([\w\-]+)", url)
+                  vid = vid.group(1) if vid else url
                   try:
                       with yt_dlp.YoutubeDL(opts) as ydl:
                           info = ydl.extract_info(url, download=False)
                       if not info:
-                          return None
+                          raise RuntimeError("no info")
                       return {
-                          "id": info.get("id") or "",
+                          "id": info.get("id") or vid,
                           "title": (info.get("description") or info.get("title") or "")[:140],
                           "user": info.get("uploader") or info.get("channel") or "",
                           "duration": info.get("duration"),
@@ -127,9 +133,10 @@ jobs:
                       }
                   except Exception as e:
                       log.append(f"meta {url}: {str(e)[:100]}")
-                      return None
+                      # לא זורקים את הקישור – מחזירים פריט חלקי (בלי תמונה/כותרת) כדי שעדיין יהיה אפשר לנסות להוריד ממנו
+                      return {"id": vid, "title": "", "user": "", "duration": None, "cover": "", "link": url, "partial": True}
 
-              with ThreadPoolExecutor(6) as ex:
+              with ThreadPoolExecutor(10) as ex:
                   items = [x for x in ex.map(meta, links) if x]
 
           result = {"items": items, "source": "search-engine", "log": log[:20]}
