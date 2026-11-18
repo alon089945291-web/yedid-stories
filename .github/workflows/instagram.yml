@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "search / download"
+        description: "search / user / download"
         default: search
       query:
         description: "מילה / #האשטג לחיפוש"
@@ -34,6 +34,7 @@ jobs:
         if: inputs.mode != 'download'
         env:
           Q: ${{ inputs.query }}
+          MODE: ${{ inputs.mode }}
         run: |
           mkdir -p out
           python3 - <<'PY'
@@ -42,6 +43,7 @@ jobs:
 
           UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
           q = os.environ.get("Q", "").strip()
+          MODE = (os.environ.get("MODE") or "search").strip()
           log = []
           START = time.time()
 
@@ -49,7 +51,7 @@ jobs:
               req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "he,en;q=0.8"})
               return urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "ignore")
 
-          # ---- שלב 1: מוצאים קישורים לפוסטים/רילסים דרך מנועי חיפוש (אין API חופשי לאינסטגרם) ----
+          # ---- שלב 1: מוצאים קישורים לפוסטים/רילסים ----
           LINK_RE = re.compile(r"https?://(?:www\.)?instagram\.com/(?:[\w.\-]+/)?(?:p|reel|reels)/([\w\-]+)")
           found = {}
 
@@ -63,7 +65,27 @@ jobs:
               for vid in LINK_RE.findall(urllib.parse.unquote(text)):
                   found.setdefault(vid, True)
 
-          base = q.lstrip("#").strip()
+          # ---- חיפוש לפי יוצר (@שם_משתמש): קודם מנסים רשימה ישירה של הפרופיל ----
+          if MODE == "user":
+              handle = q.lstrip("@").strip()
+              try:
+                  import yt_dlp
+                  opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",
+                          "playlistend": 40, "socket_timeout": 12, "retries": 1}
+                  with yt_dlp.YoutubeDL(opts) as ydl:
+                      info = ydl.extract_info(f"https://www.instagram.com/{handle}/", download=False)
+                  for e in (info or {}).get("entries") or []:
+                      u = e.get("url") or e.get("webpage_url") or ""
+                      m = LINK_RE.search(u) or LINK_RE.search(f"instagram.com/p/{e.get('id', '')}")
+                      if m:
+                          found.setdefault(m.group(1), True)
+                  print(f"רשימת פרופיל ישירה: {len(found)} קישורים")
+              except Exception as e:
+                  log.append(f"profile list: {str(e)[:120]}")
+                  print(f"רשימת פרופיל נכשלה (כנראה דורש התחברות): {e}")
+              q = f"@{handle}"
+
+          base = q.lstrip("#@").strip()
           terms = [t for t in (q, base, f'"{base}"', f"#{base}" if not q.startswith("#") else "") if t]
 
           def bing(term, first):
@@ -76,7 +98,8 @@ jobs:
           pages = {bing: (1, 51, 101, 151), ddg: (0,), brave: (0, 1, 2, 3)}
           alive = {(fn, f"site:instagram.com {t}") for fn in pages for t in terms}
           dead = set()
-          for wave in range(4):
+          skip_search_engines = MODE == "user" and len(found) >= 10  # כבר יש מספיק מהרשימה הישירה
+          for wave in range(0 if skip_search_engines else 4):
               if len(found) >= 60 or time.time() - START > 55:
                   break
               jobs = [(fn, term, pages[fn][wave]) for fn, term in alive if wave < len(pages[fn]) and fn.__name__ not in dead]
@@ -118,11 +141,13 @@ jobs:
               def meta(url):
                   vid = re.search(r"/(?:p|reel|reels)/([\w\-]+)", url)
                   vid = vid.group(1) if vid else url
+                  is_reel = "/reel" in url
                   try:
                       with yt_dlp.YoutubeDL(opts) as ydl:
                           info = ydl.extract_info(url, download=False)
                       if not info:
                           raise RuntimeError("no info")
+                      has_video = bool(info.get("duration")) or info.get("ext") in ("mp4", "mov", "webm")
                       return {
                           "id": info.get("id") or vid,
                           "title": (info.get("description") or info.get("title") or "")[:140],
@@ -130,11 +155,13 @@ jobs:
                           "duration": info.get("duration"),
                           "cover": info.get("thumbnail") or "",
                           "link": info.get("webpage_url") or url,
+                          "kind": "video" if (has_video or is_reel) else "image",
                       }
                   except Exception as e:
                       log.append(f"meta {url}: {str(e)[:100]}")
                       # לא זורקים את הקישור – מחזירים פריט חלקי (בלי תמונה/כותרת) כדי שעדיין יהיה אפשר לנסות להוריד ממנו
-                      return {"id": vid, "title": "", "user": "", "duration": None, "cover": "", "link": url, "partial": True}
+                      return {"id": vid, "title": "", "user": "", "duration": None, "cover": "", "link": url,
+                              "kind": "video" if is_reel else "unknown", "partial": True}
 
               with ThreadPoolExecutor(10) as ex:
                   items = [x for x in ex.map(meta, links) if x]
@@ -169,6 +196,7 @@ jobs:
           # ---- דרך 1: דף ה"שיבוץ" (embed) של אינסטגרם ----
           # אתרים אחרים משתמשים בדף הזה כדי להציג פוסט של אינסטגרם אצלם, בלי שהגולש יתחבר.
           # לכן אינסטגרם משאירה אותו פתוח במכוון, גם לבקשות בלי התחברות.
+          # מחזירה רשימה של כל המדיה שנמצאה בדף (כדי לתפוס גם פוסטים עם כמה תמונות/סרטונים - "קרוסלה").
           def via_embed(u):
               m = re.search(r"instagram\.com/(?:[\w.\-]+/)?(?:p|reel|reels)/([\w\-]+)", u)
               if not m:
@@ -180,23 +208,44 @@ jobs:
                       page = get("https://www.instagram.com" + path)
                   except Exception as e:
                       last_err = e; continue
-                  vid = re.search(r'<video[^>]+src="([^"]+)"', page)
-                  if vid:
-                      return "video", html.unescape(vid.group(1))
-                  img = re.search(r'<img[^>]+class="[^"]*EmbeddedMediaImage[^"]*"[^>]+src="([^"]+)"', page)
-                  if img:
-                      return "image", html.unescape(img.group(1))
+                  items = []
+                  seen = set()
+                  for vurl in re.findall(r'<video[^>]+src="([^"]+)"', page):
+                      vurl = html.unescape(vurl)
+                      if vurl not in seen:
+                          seen.add(vurl); items.append(("video", vurl))
+                  for iurl in re.findall(r'<img[^>]+class="[^"]*EmbeddedMediaImage[^"]*"[^>]+src="([^"]+)"', page):
+                      iurl = html.unescape(iurl)
+                      if iurl not in seen:
+                          seen.add(iurl); items.append(("image", iurl))
+                  # קרוסלה: גם תמונות ממוזערות של שקופיות נוספות, בתגיות עם class שמכיל Sidecar/Carousel
+                  for iurl in re.findall(r'<img[^>]+class="[^"]*(?:Sidecar|Carousel)[^"]*"[^>]+src="([^"]+)"', page):
+                      iurl = html.unescape(iurl)
+                      if iurl not in seen:
+                          seen.add(iurl); items.append(("image", iurl))
+                  if items:
+                      return items
               raise RuntimeError(str(last_err) if last_err else "דף השיבוץ לא הכיל מדיה (ייתכן שהפוסט פרטי)")
 
           Path("downloads").mkdir(exist_ok=True)
           ok = False
           try:
-              kind, media_url = via_embed(url)
-              data = get(media_url, binary=True)
-              ext = ".mp4" if kind == "video" else ".jpg"
-              Path(f"downloads/instagram_{kind}{ext}").write_bytes(data)
-              print(f"ירד דרך דף השיבוץ ({kind})")
-              ok = True
+              media_items = via_embed(url)
+              n = 0
+              for kind, media_url in media_items:
+                  try:
+                      data = get(media_url, binary=True)
+                  except Exception as e:
+                      print(f"פריט {n+1} נכשל: {e}"); continue
+                  ext = ".mp4" if kind == "video" else ".jpg"
+                  suffix = f"_{n+1}" if len(media_items) > 1 else ""
+                  Path(f"downloads/instagram_{kind}{suffix}{ext}").write_bytes(data)
+                  n += 1
+              if n:
+                  print(f"ירדו {n} פריטים דרך דף השיבוץ")
+                  ok = True
+              else:
+                  print("דרך השיבוץ מצאה מדיה אבל לא הצליחה להוריד כלום")
           except Exception as e:
               print(f"דרך השיבוץ נכשלה: {e}")
 
