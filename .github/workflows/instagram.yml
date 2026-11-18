@@ -1,0 +1,279 @@
+name: instagram
+run-name: ${{ inputs.request_id || 'instagram' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "search / download"
+        default: search
+      query:
+        description: "מילה / #האשטג לחיפוש"
+        default: ""
+      url:
+        description: "קישור לפוסט/רילס להורדה"
+        default: ""
+      request_id:
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: התקנת כלים
+        run: |
+          python3 -m pip install -q --disable-pip-version-check --break-system-packages yt-dlp 2>/dev/null \
+            || python3 -m pip install -q --disable-pip-version-check yt-dlp
+
+      # ---------------- חיפוש ----------------
+      - name: חיפוש
+        if: inputs.mode != 'download'
+        env:
+          Q: ${{ inputs.query }}
+        run: |
+          mkdir -p out
+          python3 - <<'PY'
+          import os, re, json, time, html, urllib.parse, urllib.request
+          from concurrent.futures import ThreadPoolExecutor
+
+          UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+          q = os.environ.get("Q", "").strip()
+          log = []
+          START = time.time()
+
+          def get(url):
+              req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "he,en;q=0.8"})
+              return urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "ignore")
+
+          # ---- שלב 1: מוצאים קישורים לפוסטים/רילסים דרך מנועי חיפוש (אין API חופשי לאינסטגרם) ----
+          LINK_RE = re.compile(r"https?://(?:www\.)?instagram\.com/(?:[\w.\-]+/)?(?:p|reel|reels)/([\w\-]+)")
+          found = {}
+
+          def add(text):
+              text = html.unescape(text)
+              for enc in re.findall(r"[?&]u=a1([A-Za-z0-9_\-]+)", text):
+                  try:
+                      text += " " + __import__("base64").urlsafe_b64decode(enc + "=" * (-len(enc) % 4)).decode("utf-8", "ignore")
+                  except Exception:
+                      pass
+              for vid in LINK_RE.findall(urllib.parse.unquote(text)):
+                  found.setdefault(vid, True)
+
+          base = q.lstrip("#").strip()
+          terms = [t for t in (q, base, f'"{base}"') if t]
+
+          def bing(term, first):
+              return get("https://www.bing.com/search?" + urllib.parse.urlencode({"q": term, "count": 50, "first": first}))
+          def brave(term, off):
+              return get("https://search.brave.com/search?" + urllib.parse.urlencode({"q": term, "offset": off}))
+
+          pages = {bing: (1, 51, 101), brave: (0, 1, 2)}
+          alive = {(fn, f"site:instagram.com {t}") for fn in pages for t in terms}
+          dead = set()
+          for wave in range(3):
+              if len(found) >= 24 or time.time() - START > 40:
+                  break
+              jobs = [(fn, term, pages[fn][wave]) for fn, term in alive if wave < len(pages[fn]) and fn.__name__ not in dead]
+              if not jobs:
+                  break
+              def run(job):
+                  fn, term, arg = job
+                  try:
+                      return job, fn(term, arg), None
+                  except Exception as e:
+                      return job, None, e
+              with ThreadPoolExecutor(len(jobs)) as ex:
+                  results = list(ex.map(run, jobs))
+              for (fn, term, arg), text, err in results:
+                  if err is not None:
+                      log.append(f"{fn.__name__}: {str(err)[:80]}")
+                      if any(c in str(err) for c in ("429", "403")):
+                          dead.add(fn.__name__)
+                      alive.discard((fn, term))
+                      continue
+                  before = len(found)
+                  add(text)
+                  if len(found) == before:
+                      alive.discard((fn, term))
+              print(f"wave {wave}: {len(jobs)} requests, {len(found)} links, {time.time() - START:.1f}s")
+
+          links = ["https://www.instagram.com/p/" + vid + "/" for vid in list(found.keys())[:20]]
+          print(f"search engines: {len(links)} links found")
+
+          # ---- שלב 2: לכל קישור שנמצא, שולפים כותרת/תמונה דרך yt-dlp (בלי הורדה) ----
+          items = []
+          if links:
+              import yt_dlp
+              opts = {"quiet": True, "no_warnings": True, "skip_download": True,
+                      "socket_timeout": 12, "retries": 1, "extractor_retries": 0}
+
+              def meta(url):
+                  try:
+                      with yt_dlp.YoutubeDL(opts) as ydl:
+                          info = ydl.extract_info(url, download=False)
+                      if not info:
+                          return None
+                      return {
+                          "id": info.get("id") or "",
+                          "title": (info.get("description") or info.get("title") or "")[:140],
+                          "user": info.get("uploader") or info.get("channel") or "",
+                          "duration": info.get("duration"),
+                          "cover": info.get("thumbnail") or "",
+                          "link": info.get("webpage_url") or url,
+                      }
+                  except Exception as e:
+                      log.append(f"meta {url}: {str(e)[:100]}")
+                      return None
+
+              with ThreadPoolExecutor(6) as ex:
+                  items = [x for x in ex.map(meta, links) if x]
+
+          result = {"items": items, "source": "search-engine", "log": log[:20]}
+          json.dump(result, open("out/result.json", "w"), ensure_ascii=False)
+          print(f"תוצאה סופית: {len(items)} פריטים עם פרטים מלאים")
+          PY
+
+      # ---------------- הורדה ----------------
+      - name: הורדה
+        if: inputs.mode == 'download'
+        env:
+          URL: ${{ inputs.url }}
+        run: |
+          mkdir -p downloads
+          python3 - <<'PY'
+          import os, re, sys, html, urllib.request
+          from pathlib import Path
+
+          url = os.environ.get("URL", "").strip()
+          if not url:
+              print("לא התקבל קישור"); sys.exit(1)
+
+          UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+
+          def get(u, binary=False):
+              req = urllib.request.Request(u, headers={"User-Agent": UA, "Accept-Language": "he,en;q=0.8"})
+              data = urllib.request.urlopen(req, timeout=20).read()
+              return data if binary else data.decode("utf-8", "ignore")
+
+          # ---- דרך 1: דף ה"שיבוץ" (embed) של אינסטגרם ----
+          # אתרים אחרים משתמשים בדף הזה כדי להציג פוסט של אינסטגרם אצלם, בלי שהגולש יתחבר.
+          # לכן אינסטגרם משאירה אותו פתוח במכוון, גם לבקשות בלי התחברות.
+          def via_embed(u):
+              m = re.search(r"instagram\.com/(?:[\w.\-]+/)?(?:p|reel|reels)/([\w\-]+)", u)
+              if not m:
+                  raise RuntimeError("לא זוהה קישור לפוסט/רילס של אינסטגרם")
+              code = m.group(1)
+              last_err = None
+              for path in (f"/reel/{code}/embed/captioned/", f"/p/{code}/embed/captioned/", f"/p/{code}/embed/"):
+                  try:
+                      page = get("https://www.instagram.com" + path)
+                  except Exception as e:
+                      last_err = e; continue
+                  vid = re.search(r'<video[^>]+src="([^"]+)"', page)
+                  if vid:
+                      return "video", html.unescape(vid.group(1))
+                  img = re.search(r'<img[^>]+class="[^"]*EmbeddedMediaImage[^"]*"[^>]+src="([^"]+)"', page)
+                  if img:
+                      return "image", html.unescape(img.group(1))
+              raise RuntimeError(str(last_err) if last_err else "דף השיבוץ לא הכיל מדיה (ייתכן שהפוסט פרטי)")
+
+          Path("downloads").mkdir(exist_ok=True)
+          ok = False
+          try:
+              kind, media_url = via_embed(url)
+              data = get(media_url, binary=True)
+              ext = ".mp4" if kind == "video" else ".jpg"
+              Path(f"downloads/instagram_{kind}{ext}").write_bytes(data)
+              print(f"ירד דרך דף השיבוץ ({kind})")
+              ok = True
+          except Exception as e:
+              print(f"דרך השיבוץ נכשלה: {e}")
+
+          # ---- דרך 2 (גיבוי): yt-dlp הרגיל, כמו ביוטיוב ----
+          if not ok:
+              try:
+                  import yt_dlp
+                  opts = {
+                      "quiet": True, "no_warnings": False, "ignoreerrors": True, "noprogress": True,
+                      "format": "bestvideo*+bestaudio/best",
+                      "merge_output_format": "mp4",
+                      "outtmpl": "downloads/%(uploader).40s - %(id)s.%(ext)s",
+                  }
+                  with yt_dlp.YoutubeDL(opts) as ydl:
+                      ydl.download([url])
+              except Exception as e:
+                  print(f"גם yt-dlp נכשל: {e}")
+
+          files = sorted(p for p in Path("downloads").iterdir() if p.is_file())
+          if not files:
+              print("לא ירד שום קובץ (ייתכן שהפוסט דורש התחברות לחשבון, או שהוא פרטי)")
+              sys.exit(1)
+          print(f"ירדו {len(files)} קבצים")
+          PY
+
+      # ---------------- פרסום תוצאות חיפוש ----------------
+      - name: פרסום תוצאות חיפוש
+        if: inputs.mode != 'download'
+        continue-on-error: true
+        run: |
+          TAG="igsrch-${{ github.run_id }}"
+          # שומרים את הרשימה גם בתוך תיאור השחרור, כדי שהתוסף יוכל לקרוא אותה בלי
+          # להוריד קובץ (יש רשתות/מסננים שחוסמים הורדת קבצים מ-GitHub, כמו NetFree).
+          python3 -c "
+          import json
+          data = json.load(open('out/result.json', encoding='utf-8'))
+          compact = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+          note = 'LISTJSON:' + compact if len(compact) < 100000 else 'נוצר אוטומטית'
+          open('release_notes.txt', 'w', encoding='utf-8').write(note)
+          "
+          python3 -c "import zipfile; z = zipfile.ZipFile('search.zip', 'w', zipfile.ZIP_STORED); z.write('out/result.json', 'result.json'); z.close()"
+          ok=0
+          for i in 1 2 3; do
+            gh release upload "$TAG" search.zip -R "$GITHUB_REPOSITORY" --clobber && ok=1 && break
+            gh release create "$TAG" search.zip -R "$GITHUB_REPOSITORY" \
+              --title "חיפוש ${{ github.run_id }}" --notes-file release_notes.txt && ok=1 && break
+            sleep 3
+          done
+          [ "$ok" = "1" ] || echo "פרסום השחרור נכשל, נשארת רק תוצאת ה-Artifact"
+          # שומרים רק את 30 החיפושים האחרונים
+          gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName -q '.[].tagName' \
+            | grep '^igsrch-' | grep -vx "$TAG" | sort -t- -k2 -n -r | tail -n +30 \
+            | xargs -r -n1 gh release delete -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+
+      - name: העלאת תוצאה (גיבוי)
+        if: inputs.mode != 'download'
+        uses: actions/upload-artifact@v4
+        with:
+          name: result
+          path: out/result.json
+          retention-days: 1
+
+      # ---------------- פרסום הורדה ----------------
+      - name: פרסום הורדה
+        if: inputs.mode == 'download'
+        run: |
+          TAG="igdl-${{ github.run_id }}"
+          cd downloads
+          python3 -c "
+          import zipfile, pathlib
+          files = sorted(p for p in pathlib.Path('.').iterdir() if p.is_file())
+          with zipfile.ZipFile('download.zip', 'w', zipfile.ZIP_STORED, allowZip64=True) as z:
+              for f in files:
+                  z.write(f, f.name)
+          "
+          ok=0
+          for i in 1 2 3; do
+            gh release upload "$TAG" download.zip -R "$GITHUB_REPOSITORY" --clobber && ok=1 && break
+            gh release create "$TAG" download.zip -R "$GITHUB_REPOSITORY" \
+              --title "אינסטגרם ${{ github.run_id }}" --notes "נוצר אוטומטית" && ok=1 && break
+            sleep 3
+          done
+          [ "$ok" = "1" ] || { echo "פרסום השחרור נכשל"; exit 1; }
+          cd ..
+          gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName -q '.[].tagName' \
+            | grep '^igdl-' | grep -vx "$TAG" | sort -t- -k2 -n -r | tail -n +30 \
+            | xargs -r -n1 gh release delete -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
