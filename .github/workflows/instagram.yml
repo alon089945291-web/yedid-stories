@@ -226,6 +226,8 @@ jobs:
       - name: פרסום תוצאות חיפוש
         if: inputs.mode != 'download'
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="igsrch-${{ github.run_id }}"
           # שומרים את הרשימה גם בתוך תיאור השחרור, כדי שהתוסף יוכל לקרוא אותה בלי
@@ -262,6 +264,8 @@ jobs:
       # ---------------- פרסום הורדה ----------------
       - name: פרסום הורדה
         if: inputs.mode == 'download'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="igdl-${{ github.run_id }}"
           cd downloads
