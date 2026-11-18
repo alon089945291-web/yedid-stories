@@ -65,24 +65,67 @@ jobs:
               for vid in LINK_RE.findall(urllib.parse.unquote(text)):
                   found.setdefault(vid, True)
 
-          # ---- חיפוש לפי יוצר (@שם_משתמש): קודם מנסים רשימה ישירה של הפרופיל ----
+          # ---- חיפוש לפי יוצר (@שם_משתמש) ----
+          # דרך א' (העדיפה): אותו נתיב שדף האינסטגרם עצמו קורא כדי להציג פרופיל ציבורי -
+          # מחזיר JSON אמיתי עם כל הפוסטים האחרונים, כולל תמונה/כיתוב/וידאו-או-לא, בלי התחברות.
+          profile_items = []
           if MODE == "user":
               handle = q.lstrip("@").strip()
+
+              def via_profile_api(h):
+                  req = urllib.request.Request(
+                      f"https://www.instagram.com/api/v1/users/web_profile_info/?username={urllib.parse.quote(h)}",
+                      headers={"User-Agent": UA, "Accept-Language": "he,en;q=0.8",
+                               "x-ig-app-id": "936619743392459", "Accept": "*/*"})
+                  raw = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "ignore")
+                  data = json.loads(raw)
+                  user = ((data.get("data") or {}).get("user")) or {}
+                  if not user:
+                      raise RuntimeError("משתמש לא נמצא או שהפרופיל חסום")
+                  edges = (((user.get("edge_owner_to_timeline_media") or {}).get("edges")) or [])
+                  out = []
+                  for e in edges:
+                      n = e.get("node") or {}
+                      code = n.get("shortcode")
+                      if not code:
+                          continue
+                      cap_edges = ((n.get("edge_media_to_caption") or {}).get("edges")) or []
+                      caption = (cap_edges[0]["node"]["text"] if cap_edges else "")[:140]
+                      out.append({
+                          "id": code,
+                          "title": caption,
+                          "user": user.get("username") or h,
+                          "duration": n.get("video_duration"),
+                          "cover": n.get("display_url") or n.get("thumbnail_src") or "",
+                          "link": f"https://www.instagram.com/p/{code}/",
+                          "kind": "video" if n.get("is_video") else "image",
+                      })
+                  return out
+
               try:
-                  import yt_dlp
-                  opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",
-                          "playlistend": 40, "socket_timeout": 12, "retries": 1}
-                  with yt_dlp.YoutubeDL(opts) as ydl:
-                      info = ydl.extract_info(f"https://www.instagram.com/{handle}/", download=False)
-                  for e in (info or {}).get("entries") or []:
-                      u = e.get("url") or e.get("webpage_url") or ""
-                      m = LINK_RE.search(u) or LINK_RE.search(f"instagram.com/p/{e.get('id', '')}")
-                      if m:
-                          found.setdefault(m.group(1), True)
-                  print(f"רשימת פרופיל ישירה: {len(found)} קישורים")
+                  profile_items = via_profile_api(handle)
+                  print(f"פרופיל (API ישיר): {len(profile_items)} פוסטים אמיתיים")
               except Exception as e:
-                  log.append(f"profile list: {str(e)[:120]}")
-                  print(f"רשימת פרופיל נכשלה (כנראה דורש התחברות): {e}")
+                  log.append(f"profile api: {str(e)[:150]}")
+                  print(f"ה-API הישיר לא זמין כרגע ({str(e)[:100]}), עובר לדרך גיבוי")
+
+              # דרך ב' (גיבוי): אם ה-API הישיר נכשל, מנסים דרך yt-dlp
+              if not profile_items:
+                  try:
+                      import yt_dlp
+                      opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",
+                              "playlistend": 40, "socket_timeout": 12, "retries": 1}
+                      with yt_dlp.YoutubeDL(opts) as ydl:
+                          info = ydl.extract_info(f"https://www.instagram.com/{handle}/", download=False)
+                      for e in (info or {}).get("entries") or []:
+                          u = e.get("url") or e.get("webpage_url") or ""
+                          m = LINK_RE.search(u) or LINK_RE.search(f"instagram.com/p/{e.get('id', '')}")
+                          if m:
+                              found.setdefault(m.group(1), True)
+                      print(f"רשימת פרופיל (yt-dlp): {len(found)} קישורים")
+                  except Exception as e:
+                      log.append(f"profile list: {str(e)[:120]}")
+                      print(f"רשימת פרופיל נכשלה (כנראה דורש התחברות): {e}")
               q = f"@{handle}"
 
           base = q.lstrip("#@").strip()
@@ -98,7 +141,8 @@ jobs:
           pages = {bing: (1, 51, 101, 151), ddg: (0,), brave: (0, 1, 2, 3)}
           alive = {(fn, f"site:instagram.com {t}") for fn in pages for t in terms}
           dead = set()
-          skip_search_engines = MODE == "user" and len(found) >= 10  # כבר יש מספיק מהרשימה הישירה
+          # אם ה-API הישיר (profile_items) או רשימת yt-dlp (found) כבר הביאו מספיק - לא צריך מנועי חיפוש
+          skip_search_engines = MODE == "user" and (len(profile_items) > 0 or len(found) >= 10)
           for wave in range(0 if skip_search_engines else 4):
               if len(found) >= 60 or time.time() - START > 55:
                   break
@@ -166,7 +210,15 @@ jobs:
               with ThreadPoolExecutor(10) as ex:
                   items = [x for x in ex.map(meta, links) if x]
 
-          result = {"items": items, "source": "search-engine", "log": log[:20]}
+          # פוסטים שהגיעו ישר מה-API של הפרופיל - כבר מלאים, אין צורך לשלוף עליהם פרטים בנוסף
+          seen_ids = {it["id"] for it in items}
+          for it in profile_items:
+              if it["id"] not in seen_ids:
+                  items.insert(0, it)
+                  seen_ids.add(it["id"])
+
+          source = "profile-api" if profile_items else "search-engine"
+          result = {"items": items, "source": source, "log": log[:20]}
           json.dump(result, open("out/result.json", "w"), ensure_ascii=False)
           print(f"תוצאה סופית: {len(items)} פריטים עם פרטים מלאים")
           PY
