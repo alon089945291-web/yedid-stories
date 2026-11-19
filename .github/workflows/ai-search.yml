@@ -17,107 +17,115 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - name: כלים
-        run: python -m pip install -q cryptography requests beautifulsoup4
+        run: python -m pip install -q cryptography beautifulsoup4 playwright
 
-      - name: חיפוש
+      - name: חיפוש (בדפדפן אמיתי, כדי שגוגל יעבוד)
         env:
           KEY_B64: ${{ secrets.AI_DL_KEY }}
           DATA: ${{ github.event.inputs.data }}
         run: |
           python - <<'PY'
           import base64, gzip, json, os, urllib.parse
-          import requests
           from bs4 import BeautifulSoup
           from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          from playwright.sync_api import sync_playwright
 
           key = base64.b64decode(os.environ["KEY_B64"])
           raw = base64.b64decode(os.environ["DATA"])
           req = json.loads(gzip.decompress(AESGCM(key).decrypt(raw[:12], raw[12:], None)))
           q = req["q"]
-          page = int(req.get("page") or 0)
+          page_no = int(req.get("page") or 0)
           print("::add-mask::" + q)
+          qe = urllib.parse.quote_plus(q)
 
-          UA = req.get("ua") or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
-          s = requests.Session()
-          s.headers.update({"User-Agent": UA, "Accept-Language": "he-IL,he;q=0.9,en;q=0.8"})
+          ENGINES = [
+              ("Google", "https://www.google.com/search?q=%s&hl=iw&num=20&start=%d" % (qe, page_no * 20), "#search, #rso"),
+              ("Brave", "https://search.brave.com/search?q=%s&offset=%d" % (qe, page_no), "#results"),
+              ("Bing", "https://www.bing.com/search?q=%s&setlang=he&first=%d" % (qe, page_no * 10 + 1), "#b_results"),
+              ("DuckDuckGo", "https://html.duckduckgo.com/html/?q=%s&s=%d" % (qe, page_no * 30), ".results"),
+          ]
 
           def clean(t):
               return " ".join((t or "").split())
 
-          def google():
-              r = s.get("https://www.google.com/search", params={"q": q, "hl": "iw", "num": 20, "start": page * 20}, timeout=20)
-              soup = BeautifulSoup(r.text, "html.parser")
-              out = []
-              for h3 in soup.select("a h3"):
-                  a = h3.find_parent("a")
-                  href = a.get("href", "")
-                  if href.startswith("/url?"):
-                      href = urllib.parse.parse_qs(urllib.parse.urlparse(href).query).get("q", [""])[0]
-                  if not href.startswith("http") or "google.com" in urllib.parse.urlparse(href).netloc:
+          def real_url(href):
+              """מנקה קישורי מעקב של מנועי החיפוש."""
+              u = urllib.parse.urlparse(href)
+              qs = urllib.parse.parse_qs(u.query)
+              for k in ("q", "url", "uddg", "u"):
+                  if k in qs and qs[k][0].startswith("http") and ("/url" in u.path or "/l/" in u.path or "uddg" in k):
+                      return qs[k][0]
+              return href
+
+          def extract(html, engine_host):
+              """שולף תוצאות בצורה כללית: קישור חיצוני שיש בו כותרת."""
+              soup = BeautifulSoup(html, "html.parser")
+              out, seen = [], set()
+              for a in soup.find_all("a", href=True):
+                  head = a.find(["h2", "h3"]) or a.find_parent(["h2", "h3"]) or a.select_one(".title,[class*=title]")
+                  if not head:
                       continue
-                  box = a.find_parent("div", class_=True)
-                  snip = ""
-                  for _ in range(4):
+                  href = real_url(urllib.parse.urljoin("https://" + engine_host + "/", a["href"]))
+                  host = urllib.parse.urlparse(href).netloc
+                  if not href.startswith("http") or not host or engine_host.split(".")[-2] in host:
+                      continue
+                  if href in seen:
+                      continue
+                  title = clean(head.get_text(" "))
+                  if len(title) < 3:
+                      continue
+                  seen.add(href)
+                  snip, box = "", a
+                  for _ in range(6):
+                      box = box.parent
                       if box is None:
                           break
                       txt = clean(box.get_text(" "))
-                      if len(txt) > len(clean(h3.get_text())) + 40:
-                          snip = txt.replace(clean(h3.get_text()), "", 1)[:300]
+                      if len(txt) > len(title) + 50:
+                          snip = txt.replace(title, "", 1).strip()[:300]
                           break
-                      box = box.find_parent("div")
-                  out.append({"title": clean(h3.get_text()), "url": href, "snippet": snip})
-              return out
-
-          def bing():
-              r = s.get("https://www.bing.com/search", params={"q": q, "setlang": "he", "count": 20, "first": page * 20 + 1}, timeout=20)
-              soup = BeautifulSoup(r.text, "html.parser")
-              out = []
-              for li in soup.select("li.b_algo"):
-                  a = li.select_one("h2 a")
-                  if not a or not a.get("href", "").startswith("http"):
-                      continue
-                  p = li.select_one(".b_caption p") or li.select_one("p")
-                  out.append({"title": clean(a.get_text()), "url": a["href"], "snippet": clean(p.get_text() if p else "")[:300]})
-              return out
-
-          def ddg():
-              r = s.post("https://html.duckduckgo.com/html/", data={"q": q, "kl": "il-he", "s": page * 30}, timeout=20)
-              soup = BeautifulSoup(r.text, "html.parser")
-              out = []
-              for res in soup.select(".result"):
-                  a = res.select_one("a.result__a")
-                  if not a:
-                      continue
-                  href = a.get("href", "")
-                  if "uddg=" in href:
-                      href = urllib.parse.parse_qs(urllib.parse.urlparse(href).query).get("uddg", [""])[0]
-                  if not href.startswith("http"):
-                      continue
-                  sn = res.select_one(".result__snippet")
-                  out.append({"title": clean(a.get_text()), "url": href, "snippet": clean(sn.get_text() if sn else "")[:300]})
+                  out.append({"title": title, "url": href, "snippet": snip})
               return out
 
           results, source, notes = [], "", []
-          for name, fn in (("Google", google), ("Bing", bing), ("DuckDuckGo", ddg)):
+          with sync_playwright() as p:
               try:
-                  results = fn()
-              except Exception as e:
-                  notes.append("%s: %s" % (name, type(e).__name__))
-                  results = []
-              if results:
-                  source = name
-                  break
-              notes.append(name + ": אין תוצאות או שנחסם")
+                  browser = p.chromium.launch(channel="chrome", headless=True)
+              except Exception:
+                  os.system("python -m playwright install chromium > /dev/null")
+                  browser = p.chromium.launch(headless=True)
+              ctx = browser.new_context(locale="he-IL", user_agent=req.get("ua") or None, viewport={"width": 1280, "height": 900})
+              pg = ctx.new_page()
+              for name, url, sel in ENGINES:
+                  try:
+                      pg.goto(url, wait_until="domcontentloaded", timeout=25000)
+                      try:
+                          pg.wait_for_selector(sel, timeout=8000)
+                      except Exception:
+                          pass
+                      host = urllib.parse.urlparse(pg.url).netloc
+                      if "sorry" in pg.url or "captcha" in pg.content().lower()[:20000]:
+                          notes.append(name + ": ביקש אימות (קאפצ'ה)")
+                          continue
+                      results = extract(pg.content(), host)[:25]
+                  except Exception as e:
+                      notes.append("%s: %s" % (name, type(e).__name__))
+                      results = []
+                  if results:
+                      source = name
+                      break
+                  notes.append(name + ": אין תוצאות")
+              browser.close()
 
-          out = json.dumps({"q": q, "page": page, "source": source, "results": results, "notes": notes}, ensure_ascii=False)
+          out = json.dumps({"q": q, "page": page_no, "source": source, "results": results, "notes": notes}, ensure_ascii=False)
           iv = os.urandom(12)
           enc = iv + AESGCM(key).encrypt(iv, gzip.compress(out.encode()), None)
           os.makedirs("pack", exist_ok=True)
           open("pack/results.txt", "w").write(base64.b64encode(enc).decode())
-          print("source:", source or "none", "count:", len(results))
+          print("source:", source or "none", "count:", len(results), "notes:", len(notes))
           PY
 
       - name: העלאה לנכסים
