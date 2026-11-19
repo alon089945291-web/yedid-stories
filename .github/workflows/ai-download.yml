@@ -108,12 +108,15 @@ jobs:
           PY
           rm -f cookies.txt
 
-      - name: העלאה לנכסים
+      # הקובץ נשמר כ-Release במאגר – זמין להורדה אוטומטית ע"י התוסף, וגם נמצא
+      # במאגר (לשונית Releases) למי שמחובר לחשבון. נשמר שבוע.
+      - name: שמירת הקובץ במאגר
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "ai-${{ github.event.inputs.job }}" pack/*.zip --title "ai-download" --notes "נמחק אוטומטית" --prerelease
+          gh release create "ai-${{ github.event.inputs.job }}" pack/*.zip \
+            --title "הורדה $(date -u -d '+2 hours' +'%d/%m %H:%M')" --notes "נשמר לשבוע"
 
       - name: דיווח על תקלה
         if: failure()
@@ -122,15 +125,15 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           [ -s error.txt ] || echo "ההורדה נכשלה בריצה. רעננו את הדף באתר ונסו שוב." > error.txt
-          gh release create "ai-${{ github.event.inputs.job }}" error.txt --title "ai-download error" --notes "" --prerelease || true
+          gh release create "ai-${{ github.event.inputs.job }}" error.txt --title "שגיאה" --notes "" || true
 
-      - name: ניקוי הורדות ישנות (מעל שעתיים)
+      - name: ניקוי הורדות ישנות (מעל שבוע)
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          cutoff=$(date -u -d '2 hours ago' +%s)
+          cutoff=$(date -u -d '7 days ago' +%s)
           gh release list --limit 100 --json tagName,createdAt -q '.[] | select(.tagName|startswith("ai-")) | "\(.tagName) \(.createdAt)"' | while read tag created; do
             if [ "$(date -u -d "$created" +%s)" -lt "$cutoff" ]; then gh release delete "$tag" --yes --cleanup-tag || true; fi
           done
