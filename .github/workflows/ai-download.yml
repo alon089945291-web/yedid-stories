@@ -64,6 +64,15 @@ jobs:
                   job["name"] = job.get("name") or body.get("file_name")
                   r = s.get(body["download_url"], stream=True, allow_redirects=True, timeout=120)
                   ctype = r.headers.get("content-type", "")
+          # Gemini: הקישור הראשון מחזיר טקסט שהוא רק הקישור האמיתי לתמונה – הולכים אליו
+          for _ in range(2):
+              if not (r.ok and ctype.startswith("text/")):
+                  break
+              body = r.content[:20000].strip()
+              if not (body.startswith(b"https://") and b"\n" not in body):
+                  break
+              r = s.get(body.decode(), stream=True, allow_redirects=True, timeout=120)
+              ctype = r.headers.get("content-type", "")
           if not r.ok:
               hint = " – כנראה צריך להתחבר מחדש באתר" if r.status_code in (401, 403) else ""
               open("error.txt", "w", encoding="utf-8").write("השרת של האתר החזיר שגיאה %s%s" % (r.status_code, hint))
@@ -74,8 +83,10 @@ jobs:
           m = re.search(r"filename\*=UTF-8''([^;]+)", cd) or re.search(r'filename="?([^";]+)"?', cd)
           if not name and m:
               name = urllib.parse.unquote(m.group(1))
+          if not name and "google" in urllib.parse.urlparse(r.url).hostname:
+              name = "gemini-image"
           if not name:
-              name = os.path.basename(urllib.parse.urlparse(r.url).path) or "file"
+              name = os.path.basename(urllib.parse.urlparse(r.url).path)[:60] or "file"
           name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name).strip()[:120] or "file"
           ext_by_type = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp",
                          "application/pdf": ".pdf", "text/csv": ".csv", "video/mp4": ".mp4"}
