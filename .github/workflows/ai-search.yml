@@ -150,6 +150,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           cutoff=$(date -u -d '1 hour ago' +%s)
-          gh release list --limit 100 --json tagName,createdAt -q '.[] | select(.tagName|startswith("s-")) | "\(.tagName) \(.createdAt)"' | while read tag created; do
+          gh release list --limit 100 --json tagName,publishedAt -q '.[] | select(.tagName|startswith("s-")) | "\(.tagName) \(.publishedAt)"' | while read tag created; do
             if [ "$(date -u -d "$created" +%s)" -lt "$cutoff" ]; then gh release delete "$tag" --yes --cleanup-tag || true; fi
           done
